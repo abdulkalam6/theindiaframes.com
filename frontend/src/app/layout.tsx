@@ -60,8 +60,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="flex flex-col min-h-screen bg-[#071421] text-slate-100 antialiased">
+    <html lang="en" suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        className="flex flex-col min-h-screen bg-[#071421] text-slate-100 antialiased"
+      >
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

@@ -3,8 +3,16 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { apiClient } from "@/lib/api";
-import { ArrowLeft, LogOut } from "lucide-react";
+import { API_BASE_URL, apiClient } from "@/lib/api";
+import { ArrowLeft, Download, Image as ImageIcon, LogOut } from "lucide-react";
+
+interface CustomPhotoSnapshot {
+  asset_id: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  edit_settings?: Record<string, string | number | boolean | null>;
+}
 
 interface EnquiryItem {
   product_id: string;
@@ -12,6 +20,7 @@ interface EnquiryItem {
   sku: string;
   product_name: string;
   variant_label: string;
+  custom_photo?: CustomPhotoSnapshot | null;
   quantity: number;
   unit_price_paise: number;
   line_total_paise: number;
@@ -367,6 +376,112 @@ function AdminEnquiryDetailContent() {
                 </div>
               )}
             </div>
+
+            {/* Customer Uploaded Print-Ready Photos */}
+            {enquiry.items.some((it) => it.custom_photo) && (
+              <div className="rounded-xl bg-[#0b1726] border border-[#C69A48]/40 p-6 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="text-xs font-semibold text-[#E3C27B] uppercase tracking-widest flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-[#C69A48]" />
+                    Customer Uploaded Photos (Ready for Print &amp; Framing)
+                  </h3>
+                  <span className="text-[11px] text-slate-400">
+                    Click download to save full-resolution edited photo
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {enquiry.items
+                    .filter((it) => it.custom_photo)
+                    .map((it, idx) => {
+                      const cp = it.custom_photo!;
+                      const base = API_BASE_URL.replace(/\/$/, "");
+                      const previewUrl = `${base}/admin/enquiries/${enquiry.id}/photos/${cp.asset_id}?inline=true`;
+                      const downloadUrl = `${base}/admin/enquiries/${enquiry.id}/photos/${cp.asset_id}`;
+                      const sizeKb = (cp.size_bytes / 1024).toFixed(1);
+                      const settings = cp.edit_settings || {};
+
+                      return (
+                        <div
+                          key={`${cp.asset_id}-${idx}`}
+                          className="rounded-xl bg-[#071421] border border-slate-800 p-4 flex flex-col sm:flex-row gap-4 items-start"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={previewUrl}
+                            alt={`Customer photo for ${it.product_name}`}
+                            className="w-full sm:w-32 h-40 object-contain rounded-lg bg-[#060e1a] border border-slate-700 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0 space-y-2 text-xs">
+                            <div>
+                              <p className="font-semibold text-white">
+                                {it.product_name}
+                              </p>
+                              <p className="text-slate-400 text-[11px]">
+                                {it.variant_label} ({it.sku}) &times;{" "}
+                                {it.quantity}
+                              </p>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400 truncate">
+                              File:{" "}
+                              <span className="text-slate-200 font-mono">
+                                {cp.original_filename}
+                              </span>{" "}
+                              ({sizeKb} KB)
+                            </p>
+
+                            <div className="flex flex-wrap gap-1.5 text-[10px]">
+                              {settings.orientation && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">
+                                  {String(settings.orientation)}
+                                </span>
+                              )}
+                              {settings.matColor && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">
+                                  Mat: {String(settings.matColor)}
+                                </span>
+                              )}
+                              {settings.preset &&
+                                settings.preset !== "original" && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 uppercase">
+                                    {String(settings.preset)}
+                                  </span>
+                                )}
+                              {settings.printWidthPx &&
+                                settings.printHeightPx && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                                    {String(settings.printWidthPx)}×
+                                    {String(settings.printHeightPx)}px
+                                  </span>
+                                )}
+                            </div>
+
+                            <div className="pt-1 flex flex-wrap gap-2">
+                              <a
+                                href={downloadUrl}
+                                download={cp.original_filename}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#C69A48] hover:bg-[#b58a3a] text-black font-semibold text-xs transition-colors"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Download Photo
+                              </a>
+                              <a
+                                href={previewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition-colors"
+                              >
+                                Open Full Size
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             {/* Line Items */}
             <div className="rounded-xl bg-[#0b1726] border border-slate-800 overflow-x-auto">

@@ -26,6 +26,7 @@ DEFAULT_BUSINESS_WHATSAPP = "919443312345"  # Cumbum owner WhatsApp placeholder
 
 class EnquiryService:
     def __init__(self, db: AsyncDatabase):
+        self.db = db
         self.enquiry_repo = EnquiryRepository(db)
         self.user_repo = UserRepository(db)
         self.cat_repo = CatalogueRepository(db)
@@ -79,8 +80,24 @@ class EnquiryService:
         }
 
         item_snapshots = []
-        for line in cart_result.items:
+        for idx, line in enumerate(cart_result.items):
             variant_doc = await self.cat_repo.get_variant_by_id(line.variant_id)
+            raw_item = payload.items[idx] if idx < len(payload.items) else {}
+            custom_photo_snapshot = None
+            custom_asset_id = raw_item.get("custom_photo_asset_id")
+            if custom_asset_id:
+                photo_doc = await self.db.custom_photos.find_one(
+                    {"asset_id": str(custom_asset_id)}
+                )
+                if photo_doc:
+                    custom_photo_snapshot = {
+                        "asset_id": photo_doc["asset_id"],
+                        "original_filename": photo_doc["original_filename"],
+                        "mime_type": photo_doc["mime_type"],
+                        "size_bytes": photo_doc["size_bytes"],
+                        "edit_settings": photo_doc.get("edit_settings", {}),
+                    }
+
             item_snapshots.append(
                 {
                     "product_id": line.product_id,
@@ -90,6 +107,7 @@ class EnquiryService:
                     "variant_label": line.variant_label,
                     "variant_attributes": variant_doc.get("attributes", {}) if variant_doc else {},
                     "image_snapshot_url": line.image_url,
+                    "custom_photo": custom_photo_snapshot,
                     "quantity": line.quantity,
                     "unit_price_paise": line.unit_price_paise,
                     "line_total_paise": line.line_total_paise,
@@ -147,7 +165,11 @@ class EnquiryService:
     def _build_whatsapp_url(self, doc: dict) -> str:
         """Constructs click-to-chat URL with pre-filled message text."""
         items_summary = "\n".join(
-            [f"• {it['product_name']} ({it['variant_label']}) x {it['quantity']}" for it in doc["items"]]
+            [
+                f"• {it['product_name']} ({it['variant_label']}) x {it['quantity']}"
+                + (" [Custom Photo Attached]" if it.get("custom_photo") else "")
+                for it in doc["items"]
+            ]
         )
         total_inr = doc["estimated_total_paise"] / 100
 

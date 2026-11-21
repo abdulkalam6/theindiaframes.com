@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api";
 import { ArrowLeft, Lock, Mail, ShieldAlert } from "lucide-react";
 
@@ -16,8 +16,11 @@ interface LoginResult {
   };
 }
 
-export default function LoginPage() {
+function LoginFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams.get("redirect");
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -39,8 +42,13 @@ export default function LoginPage() {
         setErrorMsg(res.error?.message || "Invalid email or password.");
       } else {
         setSuccess(true);
+        const safeRedirect =
+          redirectParam && redirectParam.startsWith("/")
+            ? redirectParam
+            : null;
         const dest =
-          res.data.user.account_type === "owner" ? "/admin" : "/account";
+          safeRedirect ||
+          (res.data.user.account_type === "owner" ? "/admin" : "/account");
         router.push(dest);
       }
     } catch {
@@ -136,5 +144,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 py-16 text-center text-xs text-slate-400">
+          Loading sign in…
+        </div>
+      }
+    >
+      <LoginFormContent />
+    </Suspense>
   );
 }

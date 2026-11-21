@@ -40,6 +40,7 @@ interface Product {
   base_sku: string;
   short_description?: string | null;
   category_id: string;
+  tags?: string[];
   gallery?: Array<{ url: string; alt?: string }>;
   is_featured: boolean;
   variants: Variant[];
@@ -345,12 +346,23 @@ function ProductsPageContent() {
                   </div>
                 </div>
 
-                <Link
-                  href={`/products/${product.slug}`}
-                  className="text-xs text-[#E3C27B] hover:text-white font-medium transition-colors"
-                >
-                  View Details &amp; Variants →
-                </Link>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <Link
+                    href={`/products/${product.slug}`}
+                    className="text-xs text-[#E3C27B] hover:text-white font-medium transition-colors"
+                  >
+                    View Details →
+                  </Link>
+                  {(product.base_sku.toUpperCase().includes("FRM") ||
+                    product.name.toLowerCase().includes("frame")) && (
+                    <Link
+                      href={`/products/${product.slug}#photo-editor`}
+                      className="text-[11px] px-2.5 py-1 rounded-md bg-[#C69A48]/15 hover:bg-[#C69A48]/25 border border-[#C69A48]/40 text-[#E3C27B] font-semibold transition-colors"
+                    >
+                      Upload &amp; Edit Photo
+                    </Link>
+                  )}
+                </div>
               </div>
             );
           })}

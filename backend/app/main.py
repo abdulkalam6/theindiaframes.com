@@ -16,6 +16,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.billing import router as billing_router
 from app.api.v1.cart import router as cart_router
 from app.api.v1.catalogue import router as catalogue_router
+from app.api.v1.custom_photos import router as custom_photos_router
 from app.api.v1.enquiry import router as enquiry_router
 from app.api.v1.wholesale import router as wholesale_router
 from app.core.config import settings
@@ -140,6 +141,7 @@ app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(billing_router, prefix=settings.API_V1_PREFIX)
 app.include_router(cart_router, prefix=settings.API_V1_PREFIX)
 app.include_router(catalogue_router, prefix=settings.API_V1_PREFIX)
+app.include_router(custom_photos_router, prefix=settings.API_V1_PREFIX)
 app.include_router(enquiry_router, prefix=settings.API_V1_PREFIX)
 app.include_router(wholesale_router, prefix=settings.API_V1_PREFIX)
 

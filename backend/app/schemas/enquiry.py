@@ -9,6 +9,23 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 
+# Custom edited photo snapshot captured immutably at submission time
+class CustomPhotoSnapshot(BaseModel):
+    asset_id: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    edit_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomPhotoUploadResponse(BaseModel):
+    asset_id: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    edit_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 # Item snapshot captured immutably at submission time
 class EnquiryItemSnapshot(BaseModel):
     product_id: str
@@ -18,6 +35,7 @@ class EnquiryItemSnapshot(BaseModel):
     variant_label: str
     variant_attributes: Dict[str, Any] = Field(default_factory=dict)
     image_snapshot_url: Optional[str] = None
+    custom_photo: Optional[CustomPhotoSnapshot] = None
     quantity: int = Field(..., ge=1)
     unit_price_paise: int = Field(..., ge=0)
     line_total_paise: int = Field(..., ge=0)

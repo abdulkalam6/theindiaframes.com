@@ -4,8 +4,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
-import { useCartStore } from "@/stores/cart";
-import { ArrowLeft, Check, Image as ImageIcon, ShoppingCart } from "lucide-react";
+import { useCartStore, type CartCustomPhoto } from "@/stores/cart";
+import { FramePhotoEditor } from "@/components/FramePhotoEditor";
+import {
+  ArrowLeft,
+  Check,
+  Image as ImageIcon,
+  ImagePlus,
+  ShoppingCart,
+} from "lucide-react";
 
 interface Variant {
   id: string;
@@ -44,6 +51,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
+  const [showPhotoEditor, setShowPhotoEditor] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -53,6 +61,11 @@ export function ProductDetailClient({ slug }: { slug: string }) {
         const res = await apiClient<Product>(`products/${slug}`);
         if (res.data) {
           setProduct(res.data);
+          const isFrameProduct =
+            res.data.base_sku.toUpperCase().includes("FRM") ||
+            res.data.tags.some((t) => t.toLowerCase().includes("frame")) ||
+            res.data.name.toLowerCase().includes("frame");
+          setShowPhotoEditor(isFrameProduct);
           const first =
             res.data.variants.find((v) => v.availability === "available") ??
             res.data.variants[0];
@@ -134,6 +147,25 @@ export function ProductDetailClient({ slug }: { slug: string }) {
     );
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);
+  };
+
+  const handleAddWithCustomPhoto = (customPhoto: CartCustomPhoto) => {
+    if (!variant || variant.availability !== "available") return;
+    addItem(
+      {
+        productId: product.id,
+        variantId: variant.id,
+        sku: variant.sku,
+        productName: product.name,
+        variantLabel: variant.label,
+        imageUrl: variant.gallery?.[0]?.url ?? product.gallery?.[0]?.url,
+        retailPricePaise: variant.retail_price_paise ?? 0,
+        wholesalePricePaise: variant.wholesale_price_paise ?? undefined,
+        wholesaleMoq: variant.wholesale_moq ?? 1,
+        customPhoto,
+      },
+      Math.max(1, quantity)
+    );
   };
 
   const heroImage = variant?.gallery?.[0] ?? product.gallery?.[0] ?? null;
@@ -283,7 +315,32 @@ export function ProductDetailClient({ slug }: { slug: string }) {
             )}
           </div>
         )}
+
+        {variant && !showPhotoEditor && (
+          <div className="pt-2 border-t border-slate-800/80 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowPhotoEditor(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-[#E3C27B] hover:text-white transition-colors"
+            >
+              <ImagePlus className="w-3.5 h-3.5" /> Want to attach &amp; edit a
+              custom photo? Open Photo Studio
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Interactive Custom Photo Upload & Frame Editor */}
+      {variant && showPhotoEditor && (
+        <FramePhotoEditor
+          productName={product.name}
+          variantLabel={variant.label}
+          sku={variant.sku}
+          quantity={Math.max(1, quantity)}
+          disabled={variant.availability !== "available"}
+          onPhotoAddedToCart={handleAddWithCustomPhoto}
+        />
+      )}
     </div>
   );
 }

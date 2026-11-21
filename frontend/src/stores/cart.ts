@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export interface CartCustomPhoto {
+  assetId: string;
+  originalFilename: string;
+  previewDataUrl: string;
+  editSummary: string;
+}
+
 export interface CartItem {
+  cartLineKey?: string;
   productId: string;
   variantId: string;
   sku: string;
@@ -12,13 +20,24 @@ export interface CartItem {
   wholesalePricePaise?: number;
   wholesaleMoq: number;
   quantity: number;
+  customPhoto?: CartCustomPhoto;
+}
+
+export function getCartLineKey(
+  item: Pick<CartItem, "cartLineKey" | "variantId" | "customPhoto">
+): string {
+  if (item.cartLineKey) return item.cartLineKey;
+  if (item.customPhoto?.assetId) {
+    return `${item.variantId}::${item.customPhoto.assetId}`;
+  }
+  return item.variantId;
 }
 
 interface CartStore {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
-  updateQuantity: (variantId: string, quantity: number) => void;
-  removeItem: (variantId: string) => void;
+  updateQuantity: (lineKey: string, quantity: number) => void;
+  removeItem: (lineKey: string) => void;
   clearCart: () => void;
   getTotalItems: () => number;
 }
@@ -29,41 +48,45 @@ export const useCartStore = create<CartStore>()(
       items: [],
 
       addItem: (item, quantity = 1) => {
+        const lineKey = getCartLineKey(item);
         set((state) => {
           const existingIndex = state.items.findIndex(
-            (i) => i.variantId === item.variantId
+            (i) => getCartLineKey(i) === lineKey
           );
 
           if (existingIndex > -1) {
             const updatedItems = [...state.items];
-            updatedItems[existingIndex].quantity += quantity;
+            updatedItems[existingIndex] = {
+              ...updatedItems[existingIndex],
+              quantity: updatedItems[existingIndex].quantity + quantity,
+            };
             return { items: updatedItems };
           }
 
           return {
-            items: [...state.items, { ...item, quantity }],
+            items: [...state.items, { ...item, cartLineKey: lineKey, quantity }],
           };
         });
       },
 
-      updateQuantity: (variantId: string, quantity: number) => {
+      updateQuantity: (lineKey, quantity) => {
         set((state) => {
           if (quantity <= 0) {
             return {
-              items: state.items.filter((i) => i.variantId !== variantId),
+              items: state.items.filter((i) => getCartLineKey(i) !== lineKey),
             };
           }
           return {
             items: state.items.map((i) =>
-              i.variantId === variantId ? { ...i, quantity } : i
+              getCartLineKey(i) === lineKey ? { ...i, quantity } : i
             ),
           };
         });
       },
 
-      removeItem: (variantId: string) => {
+      removeItem: (lineKey) => {
         set((state) => ({
-          items: state.items.filter((i) => i.variantId !== variantId),
+          items: state.items.filter((i) => getCartLineKey(i) !== lineKey),
         }));
       },
 

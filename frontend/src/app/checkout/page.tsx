@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useCartStore } from "@/stores/cart";
+import { getCartLineKey, useCartStore } from "@/stores/cart";
 import { apiClient } from "@/lib/api";
 import { formatINR } from "@/lib/utils";
 import {
@@ -62,6 +62,7 @@ export default function CheckoutPage() {
         product_id: it.productId,
         variant_id: it.variantId,
         quantity: it.quantity,
+        custom_photo_asset_id: it.customPhoto?.assetId,
       })),
       customer_note: customerNote || undefined,
       idempotency_key: idempotencyKey,
@@ -161,14 +162,33 @@ export default function CheckoutPage() {
           </h2>
           <div className="divide-y divide-slate-800 text-xs">
             {items.map((it) => (
-              <div key={it.variantId} className="py-2.5 flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-white">{it.productName}</p>
-                  <p className="text-slate-400 text-[11px]">
-                    {it.variantLabel} ({it.sku}) &times; {it.quantity}
-                  </p>
+              <div
+                key={getCartLineKey(it)}
+                className="py-3 flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {it.customPhoto?.previewDataUrl && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={it.customPhoto.previewDataUrl}
+                      alt={it.productName}
+                      className="w-12 h-14 object-contain rounded bg-[#060e1a] border border-[#C69A48]/40 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white">{it.productName}</p>
+                    <p className="text-slate-400 text-[11px]">
+                      {it.variantLabel} ({it.sku}) &times; {it.quantity}
+                    </p>
+                    {it.customPhoto && (
+                      <p className="text-[11px] text-[#E3C27B] truncate">
+                        Custom photo: {it.customPhoto.originalFilename} (
+                        {it.customPhoto.editSummary})
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right font-mono text-slate-200">
+                <div className="text-right font-mono text-slate-200 shrink-0">
                   {formatINR(it.retailPricePaise * it.quantity)}
                 </div>
               </div>

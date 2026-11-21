@@ -25,7 +25,11 @@ interface EnquiryItem {
     outstanding_paise: number;
     payment_status: "unpaid" | "partial" | "paid";
   };
-  items: Array<{ product_name: string; quantity: number }>;
+  items: Array<{
+    product_name: string;
+    quantity: number;
+    custom_photo?: { asset_id: string } | null;
+  }>;
 }
 
 const STATUS_OPTIONS = [
@@ -212,8 +216,15 @@ export default function AdminEnquiriesPage() {
                       </p>
                     </td>
                     <td className="px-4 py-3 text-slate-400">
-                      {enq.items.length} item
-                      {enq.items.length !== 1 ? "s" : ""}
+                      <span>
+                        {enq.items.length} item
+                        {enq.items.length !== 1 ? "s" : ""}
+                      </span>
+                      {enq.items.some((i) => i.custom_photo) && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-[#C69A48]/20 border border-[#C69A48]/40 text-[#E3C27B] text-[10px] font-semibold">
+                          Photo
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span

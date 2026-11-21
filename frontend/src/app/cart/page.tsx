@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useCartStore } from "@/stores/cart";
+import { getCartLineKey, useCartStore } from "@/stores/cart";
 import { apiClient } from "@/lib/api";
 import { formatINR } from "@/lib/utils";
 import {
@@ -170,10 +170,13 @@ export default function CartPage() {
       {/* Cart Items List */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
-          {items.map((item) => {
-            const validated = serverValidation?.items.find(
-              (v) => v.variant_id === item.variantId
-            );
+          {items.map((item, idx) => {
+            const lineKey = getCartLineKey(item);
+            const validated =
+              serverValidation?.items[idx] ??
+              serverValidation?.items.find(
+                (v) => v.variant_id === item.variantId
+              );
             const unitPrice = validated
               ? validated.unit_price_paise
               : item.retailPricePaise;
@@ -183,38 +186,62 @@ export default function CartPage() {
 
             return (
               <div
-                key={item.variantId}
+                key={lineKey}
                 className="p-4 rounded-xl bg-[#0b1726] border border-slate-800 flex items-start justify-between gap-4"
               >
-                <div className="space-y-1">
-                  <h3 className="font-semibold text-white text-sm">
-                    {item.productName}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Variant: <span className="text-slate-200">{item.variantLabel}</span> ({item.sku})
-                  </p>
-
-                  {/* MOQ Notice */}
-                  {serverValidation?.pricing_tier === "wholesale" && (
-                    <div className="text-[11px] text-[#E3C27B] mt-1">
-                      Wholesale MOQ: {item.wholesaleMoq} units
-                      {item.quantity < item.wholesaleMoq && (
-                        <span className="text-red-400 ml-2 font-semibold">
-                          (Need {item.wholesaleMoq - item.quantity} more)
-                        </span>
-                      )}
-                    </div>
+                <div className="flex items-start gap-4 min-w-0">
+                  {item.customPhoto?.previewDataUrl && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={item.customPhoto.previewDataUrl}
+                      alt={`Custom framed preview for ${item.productName}`}
+                      className="w-20 h-24 object-contain rounded-lg bg-[#060e1a] border border-[#C69A48]/40 shrink-0"
+                    />
                   )}
+                  <div className="space-y-1 min-w-0">
+                    <h3 className="font-semibold text-white text-sm">
+                      {item.productName}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Variant:{" "}
+                      <span className="text-slate-200">{item.variantLabel}</span>{" "}
+                      ({item.sku})
+                    </p>
 
-                  <div className="text-xs text-slate-300 pt-2 font-mono">
-                    Unit: {formatINR(unitPrice)}
+                    {item.customPhoto && (
+                      <div className="pt-1 space-y-0.5">
+                        <span className="inline-block px-2 py-0.5 rounded bg-[#C69A48]/20 border border-[#C69A48]/40 text-[#E3C27B] text-[10px] font-semibold">
+                          Custom Photo Attached
+                        </span>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {item.customPhoto.originalFilename} ·{" "}
+                          {item.customPhoto.editSummary}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* MOQ Notice */}
+                    {serverValidation?.pricing_tier === "wholesale" && (
+                      <div className="text-[11px] text-[#E3C27B] mt-1">
+                        Wholesale MOQ: {item.wholesaleMoq} units
+                        {item.quantity < item.wholesaleMoq && (
+                          <span className="text-red-400 ml-2 font-semibold">
+                            (Need {item.wholesaleMoq - item.quantity} more)
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="text-xs text-slate-300 pt-2 font-mono">
+                      Unit: {formatINR(unitPrice)}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-3">
+                <div className="flex flex-col items-end gap-3 shrink-0">
                   <div className="flex items-center border border-slate-700 rounded-lg overflow-hidden bg-[#071421]">
                     <button
-                      onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
+                      onClick={() => updateQuantity(lineKey, item.quantity - 1)}
                       className="p-1.5 text-slate-400 hover:text-white transition-colors"
                       aria-label="Decrease quantity"
                     >
@@ -224,7 +251,7 @@ export default function CartPage() {
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
+                      onClick={() => updateQuantity(lineKey, item.quantity + 1)}
                       className="p-1.5 text-slate-400 hover:text-white transition-colors"
                       aria-label="Increase quantity"
                     >
@@ -239,7 +266,7 @@ export default function CartPage() {
                   </div>
 
                   <button
-                    onClick={() => removeItem(item.variantId)}
+                    onClick={() => removeItem(lineKey)}
                     className="text-slate-500 hover:text-red-400 transition-colors p-1"
                     aria-label="Remove item"
                   >

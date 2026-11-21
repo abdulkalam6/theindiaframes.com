@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
+from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.database import AsyncDatabase
 
 
@@ -160,7 +161,9 @@ class BillingRepository:
     def __init__(self, db: AsyncDatabase):
         self.db = db
 
-    async def get_next_payment_id(self) -> str:
+    async def get_next_payment_id(
+        self, session: Optional[AsyncClientSession] = None
+    ) -> str:
         """Generate sequential human-readable payment ID e.g. TIFPAY-2026-00001."""
         year = datetime.now(timezone.utc).year
         counter = await self.db.counters.find_one_and_update(
@@ -168,9 +171,25 @@ class BillingRepository:
             {"$inc": {"seq": 1}},
             upsert=True,
             return_document=True,
+            session=session,
         )
         seq = counter["seq"]
         return f"TIFPAY-{year}-{seq:05d}"
+
+    async def get_next_sale_id(
+        self, session: Optional[AsyncClientSession] = None
+    ) -> str:
+        """Generate sequential human-readable offline sale ID e.g. TIFS-2026-00001."""
+        year = datetime.now(timezone.utc).year
+        counter = await self.db.counters.find_one_and_update(
+            {"_id": f"offline_sale_{year}"},
+            {"$inc": {"seq": 1}},
+            upsert=True,
+            return_document=True,
+            session=session,
+        )
+        seq = counter["seq"]
+        return f"TIFS-{year}-{seq:05d}"
 
     def _build_date_filter(
         self, start_date: Optional[datetime], end_date: Optional[datetime]
@@ -298,35 +317,163 @@ class BillingRepository:
         return summary
 
     async def get_source_record(
-        self, source_type: str, source_id: str
+        self,
+        source_type: str,
+        source_id: str,
+        session: Optional[AsyncClientSession] = None,
     ) -> Optional[Dict[str, Any]]:
         if source_type == "enquiry":
             doc = None
             if ObjectId.is_valid(source_id):
-                doc = await self.db.enquiries.find_one({"_id": ObjectId(source_id)})
+                doc = await self.db.enquiries.find_one(
+                    {"_id": ObjectId(source_id)}, session=session
+                )
             if not doc:
-                doc = await self.db.enquiries.find_one({"enquiry_id": source_id})
+                doc = await self.db.enquiries.find_one(
+                    {"enquiry_id": source_id}, session=session
+                )
             return normalize_enquiry_to_billing(doc) if doc else None
 
         if source_type == "offline_sale":
             doc = None
             if ObjectId.is_valid(source_id):
-                doc = await self.db.offline_sales.find_one({"_id": ObjectId(source_id)})
+                doc = await self.db.offline_sales.find_one(
+                    {"_id": ObjectId(source_id)}, session=session
+                )
             if not doc:
-                doc = await self.db.offline_sales.find_one({"sale_id": source_id})
+                doc = await self.db.offline_sales.find_one(
+                    {"sale_id": source_id}, session=session
+                )
             return normalize_offline_sale_to_billing(doc) if doc else None
 
         return None
 
+    async def create_offline_sale(
+        self, doc: Dict[str, Any], session: Optional[AsyncClientSession] = None
+    ) -> Dict[str, Any]:
+        res = await self.db.offline_sales.insert_one(doc, session=session)
+        doc["_id"] = res.inserted_id
+        return normalize_offline_sale_to_billing(doc)
+
+    async def update_offline_sale(
+        self,
+        sale_oid: ObjectId,
+        update_fields: Dict[str, Any],
+        session: Optional[AsyncClientSession] = None,
+    ) -> Optional[Dict[str, Any]]:
+        await self.db.offline_sales.update_one(
+            {"_id": sale_oid}, {"$set": update_fields}, session=session
+        )
+        doc = await self.db.offline_sales.find_one({"_id": sale_oid}, session=session)
+        return normalize_offline_sale_to_billing(doc) if doc else None
+
+    async def get_payment_by_idempotency_key(
+        self, key: str, session: Optional[AsyncClientSession] = None
+    ) -> Optional[Dict[str, Any]]:
+        doc = await self.db.payments.find_one({"idempotency_key": key}, session=session)
+        return clean_payment_doc(doc) if doc else None
+
+    async def get_payment_by_id_or_human(
+        self, payment_ref: str, session: Optional[AsyncClientSession] = None
+    ) -> Optional[Dict[str, Any]]:
+        doc = None
+        if ObjectId.is_valid(payment_ref):
+            doc = await self.db.payments.find_one(
+                {"_id": ObjectId(payment_ref)}, session=session
+            )
+        if not doc:
+            doc = await self.db.payments.find_one(
+                {"payment_id": payment_ref}, session=session
+            )
+        return clean_payment_doc(doc) if doc else None
+
+    async def compute_ledger_net_received(
+        self,
+        source_type: str,
+        source_id: str,
+        session: Optional[AsyncClientSession] = None,
+    ) -> int:
+        source_match: List[Any] = [source_id]
+        if ObjectId.is_valid(source_id):
+            source_match.append(ObjectId(source_id))
+        cursor = self.db.payments.find(
+            {"source_type": source_type, "source_id": {"$in": source_match}},
+            session=session,
+        )
+        net = 0
+        async for doc in cursor:
+            if doc.get("entry_type") == "reversal":
+                net -= int(doc.get("amount_paise", 0))
+            else:
+                net += int(doc.get("amount_paise", 0))
+        return max(0, net)
+
+    async def compute_reversed_amount_for_receipt(
+        self,
+        original_payment_id: str,
+        session: Optional[AsyncClientSession] = None,
+    ) -> int:
+        id_match: List[Any] = [original_payment_id]
+        if ObjectId.is_valid(original_payment_id):
+            id_match.append(ObjectId(original_payment_id))
+        cursor = self.db.payments.find(
+            {
+                "entry_type": "reversal",
+                "reversed_payment_id": {"$in": id_match},
+            },
+            session=session,
+        )
+        total = 0
+        async for doc in cursor:
+            total += int(doc.get("amount_paise", 0))
+        return total
+
+    async def insert_payment(
+        self, doc: Dict[str, Any], session: Optional[AsyncClientSession] = None
+    ) -> Dict[str, Any]:
+        res = await self.db.payments.insert_one(doc, session=session)
+        doc["_id"] = res.inserted_id
+        return clean_payment_doc(doc)
+
+    async def update_source_payment_summary(
+        self,
+        source_type: str,
+        source_id: str,
+        received_total_paise: int,
+        outstanding_paise: int,
+        payment_status: str,
+        updated_at: datetime,
+        session: Optional[AsyncClientSession] = None,
+    ) -> None:
+        collection = (
+            self.db.enquiries if source_type == "enquiry" else self.db.offline_sales
+        )
+        await collection.update_one(
+            {"_id": ObjectId(source_id)},
+            {
+                "$set": {
+                    "payment_summary.received_total_paise": received_total_paise,
+                    "payment_summary.outstanding_paise": outstanding_paise,
+                    "payment_summary.payment_status": payment_status,
+                    "updated_at": updated_at,
+                }
+            },
+            session=session,
+        )
+
     async def list_payments_for_source(
-        self, source_type: str, source_id: str
+        self,
+        source_type: str,
+        source_id: str,
+        session: Optional[AsyncClientSession] = None,
     ) -> List[Dict[str, Any]]:
         source_match: List[Any] = [source_id]
         if ObjectId.is_valid(source_id):
             source_match.append(ObjectId(source_id))
 
         cursor = self.db.payments.find(
-            {"source_type": source_type, "source_id": {"$in": source_match}}
+            {"source_type": source_type, "source_id": {"$in": source_match}},
+            session=session,
         ).sort("paid_at", -1)
 
         items: List[Dict[str, Any]] = []

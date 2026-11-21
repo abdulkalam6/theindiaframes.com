@@ -9,6 +9,7 @@ from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo.asynchronous.database import AsyncDatabase
 
+from app.repositories.audit import AuditRepository
 from app.repositories.enquiry import EnquiryRepository
 from app.repositories.users import UserRepository
 from app.schemas.admin import AdminDashboardSummary, EnquiryQuoteUpdateRequest, EnquiryStatusUpdateRequest
@@ -23,6 +24,7 @@ class AdminService:
         self.enquiry_repo = EnquiryRepository(db)
         self.user_repo = UserRepository(db)
         self.enquiry_service = EnquiryService(db)
+        self.audit_repo = AuditRepository(db)
 
     async def get_dashboard_summary(self) -> AdminDashboardSummary:
         total_enquiries = await self.db.enquiries.count_documents({})
@@ -114,10 +116,19 @@ class AdminService:
 
         now = datetime.now(timezone.utc)
         received_total = doc.get("payment_summary", {}).get("received_total_paise", 0)
+        if payload.quoted_total_paise < received_total:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Quoted total cannot be reduced below net payments already received. "
+                    "Reverse excess payments first."
+                ),
+            )
+
         new_outstanding = max(0, payload.quoted_total_paise - received_total)
 
         payment_status = "unpaid"
-        if received_total >= payload.quoted_total_paise and payload.quoted_total_paise > 0:
+        if payload.quoted_total_paise == 0 or received_total >= payload.quoted_total_paise:
             payment_status = "paid"
         elif received_total > 0:
             payment_status = "partial"
@@ -141,6 +152,21 @@ class AdminService:
                         "note": audit_note,
                     }
                 },
+            },
+        )
+        await self.audit_repo.log(
+            actor_user_id=owner_id,
+            action="enquiry.quote.updated",
+            entity_type="enquiry",
+            entity_id=enquiry_id,
+            before={
+                "quoted_total_paise": doc.get("quoted_total_paise"),
+                "outstanding_paise": doc.get("payment_summary", {}).get("outstanding_paise"),
+            },
+            after={
+                "quoted_total_paise": payload.quoted_total_paise,
+                "outstanding_paise": new_outstanding,
+                "payment_status": payment_status,
             },
         )
 

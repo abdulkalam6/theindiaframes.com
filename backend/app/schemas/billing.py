@@ -7,7 +7,7 @@ Money values are integer paise (INR); tax_amount_paise remains null until confir
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SourceType = Literal["enquiry", "offline_sale"]
 SourceLabel = Literal["Online Enquiry", "Offline Sale"]
@@ -90,3 +90,75 @@ class BillingSummaryResponse(BaseModel):
     partial_count: int
     paid_count: int
     currency: str = "INR"
+
+
+# --- Phase 9: Offline Sales & Payments ---
+
+
+class OfflineSaleCustomerInput(BaseModel):
+    customer_id: Optional[str] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class OfflineSaleItemInput(BaseModel):
+    product_id: Optional[str] = None
+    variant_id: Optional[str] = None
+    sku: Optional[str] = None
+    product_name: Optional[str] = None
+    variant_label: Optional[str] = None
+    quantity: int = Field(..., ge=1)
+    unit_price_paise: Optional[int] = Field(None, ge=0)
+
+
+class OfflineSaleCreateRequest(BaseModel):
+    customer: OfflineSaleCustomerInput
+    items: List[OfflineSaleItemInput] = Field(..., min_length=1)
+    discount_paise: int = Field(0, ge=0)
+    notes: Optional[str] = None
+
+
+class OfflineSaleUpdateRequest(BaseModel):
+    items: Optional[List[OfflineSaleItemInput]] = Field(None, min_length=1)
+    discount_paise: Optional[int] = Field(None, ge=0)
+    notes: Optional[str] = None
+    sale_status: Optional[Literal["recorded", "voided"]] = None
+
+
+class PaymentCreateRequest(BaseModel):
+    entry_type: PaymentEntryType = "receipt"
+    amount_paise: Optional[int] = Field(None, gt=0)
+    reversed_payment_id: Optional[str] = None
+    method: PaymentMethod
+    paid_at: Optional[datetime] = None
+    reference_number: Optional[str] = None
+    notes: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+
+class PaymentRecordResult(BaseModel):
+    payment: PaymentEntryResponse
+    billing_record: BillingRecordDetail
+    idempotent_replay: bool = False
+
+
+class ReconciliationMismatch(BaseModel):
+    source_type: SourceType
+    source_id: str
+    reference_id: str
+    payable_total_paise: int
+    stored_received_paise: int
+    ledger_net_received_paise: int
+    stored_outstanding_paise: int
+    expected_outstanding_paise: int
+    stored_payment_status: str
+    expected_payment_status: str
+
+
+class ReconciliationReport(BaseModel):
+    checked_records: int
+    consistent_records: int
+    mismatched_records: int
+    repaired_records: int
+    mismatches: List[ReconciliationMismatch]

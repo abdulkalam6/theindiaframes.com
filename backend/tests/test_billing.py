@@ -35,6 +35,7 @@ async def setup_test_billing_db():
         await db_manager.db.enquiries.delete_many({})
         await db_manager.db.offline_sales.delete_many({})
         await db_manager.db.payments.delete_many({})
+        await db_manager.db.audit_logs.delete_many({})
     yield
     if db_manager.db is not None:
         await db_manager.db.users.delete_many({})
@@ -45,6 +46,7 @@ async def setup_test_billing_db():
         await db_manager.db.enquiries.delete_many({})
         await db_manager.db.offline_sales.delete_many({})
         await db_manager.db.payments.delete_many({})
+        await db_manager.db.audit_logs.delete_many({})
 
 
 @pytest.mark.asyncio
@@ -302,3 +304,301 @@ async def test_billing_authorization_and_unified_records():
                     "idempotency_key": "pay-idem-001",
                 }
             )
+
+
+@pytest.mark.asyncio
+async def test_phase9_offline_sales_partial_payments_reversals_and_reconciliation():
+    """
+    Phase 9 Exit Gate Verification:
+    1. Offline sale creation with multiple line items, walk-in/existing customer, manual price
+       override & discount with audit log entries.
+    2. Two partial payments produce exact received/outstanding/status transitions.
+    3. Idempotency prevents duplicate payment receipts.
+    4. Reversal creates a separate immutable ledger entry while preserving original receipt.
+    5. Admin enquiry view immediately reflects payments recorded in Billing on the shared record,
+       and blocks reducing quote below net received.
+    6. Reconciliation detects and repairs drifted payment summaries from the immutable ledger.
+    """
+    await provision_owner(
+        name="Owner Phase9",
+        email="owner.p9@theindiaframes.com",
+        password="OwnerPassword123!",
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as cust_client:
+        await cust_client.post(
+            "/api/v1/auth/register",
+            json={
+                "name": "Meena Studio",
+                "email": "meena@example.com",
+                "password": "Password123!",
+                "requested_account_type": "retail",
+            },
+        )
+        await cust_client.post(
+            "/api/v1/auth/login",
+            json={"email": "meena@example.com", "password": "Password123!"},
+        )
+        me_cust = await cust_client.get("/api/v1/auth/me")
+        cust_id = me_cust.json()["data"]["id"]
+
+        # Customer cannot create offline sales or record payments (403)
+        denied_sale = await cust_client.post(
+            "/api/v1/billing/offline-sales",
+            json={
+                "customer": {"name": "Walk-in"},
+                "items": [{"product_name": "Frame", "quantity": 1, "unit_price_paise": 50000}],
+            },
+        )
+        assert denied_sale.status_code == 403
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as owner_client:
+        await owner_client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner.p9@theindiaframes.com", "password": "OwnerPassword123!"},
+        )
+
+        # Create catalogue item (retail ₹650 = 65000 paise)
+        cat = await owner_client.post(
+            "/api/v1/admin/categories",
+            headers={"x-auth-role": "owner"},
+            json={"name": "Wood Frames", "slug": "wood-frames-p9"},
+        )
+        cat_id = cat.json()["data"]["id"]
+        prod = await owner_client.post(
+            "/api/v1/admin/products",
+            headers={"x-auth-role": "owner"},
+            json={
+                "name": "Teak Frame",
+                "slug": "teak-frame-p9",
+                "base_sku": "TK-01",
+                "category_id": cat_id,
+            },
+        )
+        prod_id = prod.json()["data"]["id"]
+        var = await owner_client.post(
+            f"/api/v1/admin/products/{prod_id}/variants",
+            headers={"x-auth-role": "owner"},
+            json={
+                "sku": "TK-01-12X18",
+                "label": "12 x 18 in",
+                "retail_price_paise": 65000,
+                "availability": "available",
+            },
+        )
+        var_id = var.json()["data"]["id"]
+
+        # 1. Create offline sale with 2 line items (catalogue with manual price override + custom)
+        # Line 1: 2 x ₹600 (overridden from ₹650) = ₹1200 (120000)
+        # Line 2: 1 x ₹300 custom glass cut = ₹300 (30000)
+        # Subtotal = ₹1500 (150000), Discount = ₹100 (10000) -> Payable = ₹1400 (140000)
+        sale_resp = await owner_client.post(
+            "/api/v1/billing/offline-sales",
+            json={
+                "customer": {"customer_id": cust_id},
+                "items": [
+                    {
+                        "product_id": prod_id,
+                        "variant_id": var_id,
+                        "quantity": 2,
+                        "unit_price_paise": 60000,
+                    },
+                    {
+                        "product_name": "Custom Non-Glare Glass",
+                        "variant_label": "12 x 18 in",
+                        "quantity": 1,
+                        "unit_price_paise": 30000,
+                    },
+                ],
+                "discount_paise": 10000,
+                "notes": "Regular studio customer discount",
+            },
+        )
+        assert sale_resp.status_code == 201
+        sale_data = sale_resp.json()["data"]
+        sale_id = sale_data["source_id"]
+        assert sale_data["source_type"] == "offline_sale"
+        assert sale_data["reference_id"].startswith("TIFS-")
+        assert sale_data["customer"]["name"] == "Meena Studio"
+        assert sale_data["subtotal_paise"] == 150000
+        assert sale_data["discount_paise"] == 10000
+        assert sale_data["payable_total_paise"] == 140000
+        assert sale_data["payment_status"] == "unpaid"
+
+        # Verify audit log recorded manual price deviation
+        audit_doc = await db_manager.db.audit_logs.find_one(
+            {"action": "offline_sale.created", "entity_id": ObjectId(sale_id)}
+        )
+        assert audit_doc is not None
+        assert len(audit_doc["after"]["price_deviations"]) == 1
+        assert audit_doc["after"]["price_deviations"][0]["catalogue_retail_paise"] == 65000
+        assert audit_doc["after"]["price_deviations"][0]["agreed_unit_price_paise"] == 60000
+
+        # 2. First partial payment: ₹500 (50000 paise) via UPI with idempotency key
+        pay1_resp = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={
+                "entry_type": "receipt",
+                "amount_paise": 50000,
+                "method": "upi",
+                "reference_number": "UPI-1001",
+                "notes": "Advance payment",
+                "idempotency_key": "sale-pay-1",
+            },
+        )
+        assert pay1_resp.status_code == 201
+        pay1 = pay1_resp.json()["data"]
+        assert pay1["idempotent_replay"] is False
+        assert pay1["billing_record"]["received_total_paise"] == 50000
+        assert pay1["billing_record"]["outstanding_paise"] == 90000
+        assert pay1["billing_record"]["payment_status"] == "partial"
+        first_payment_id = pay1["payment"]["id"]
+
+        # 3. Idempotent retry with same key does NOT create duplicate
+        pay1_retry = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={
+                "entry_type": "receipt",
+                "amount_paise": 50000,
+                "method": "upi",
+                "reference_number": "UPI-1001",
+                "idempotency_key": "sale-pay-1",
+            },
+        )
+        assert pay1_retry.status_code == 201
+        assert pay1_retry.json()["data"]["idempotent_replay"] is True
+        assert pay1_retry.json()["data"]["payment"]["id"] == first_payment_id
+        assert len(pay1_retry.json()["data"]["billing_record"]["payments"]) == 1
+
+        # 4. Second partial payment: ₹900 (90000 paise) via cash -> Paid in full
+        pay2_resp = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={
+                "entry_type": "receipt",
+                "amount_paise": 90000,
+                "method": "cash",
+                "notes": "Balance on pickup",
+                "idempotency_key": "sale-pay-2",
+            },
+        )
+        assert pay2_resp.status_code == 201
+        pay2 = pay2_resp.json()["data"]
+        assert pay2["billing_record"]["received_total_paise"] == 140000
+        assert pay2["billing_record"]["outstanding_paise"] == 0
+        assert pay2["billing_record"]["payment_status"] == "paid"
+
+        # Overpayment blocked
+        overpay = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={"entry_type": "receipt", "amount_paise": 100, "method": "cash"},
+        )
+        assert overpay.status_code == 400
+
+        # Voiding blocked while net receipts > 0
+        void_blocked = await owner_client.patch(
+            f"/api/v1/billing/offline-sales/{sale_id}",
+            json={"sale_status": "voided"},
+        )
+        assert void_blocked.status_code == 400
+
+        # 5. Reversal workflow: reverse first ₹500 receipt -> original receipt stays preserved!
+        rev_resp = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={
+                "entry_type": "reversal",
+                "reversed_payment_id": first_payment_id,
+                "method": "upi",
+                "notes": "UPI failed settlement",
+                "idempotency_key": "sale-rev-1",
+            },
+        )
+        assert rev_resp.status_code == 201
+        rev_data = rev_resp.json()["data"]
+        assert rev_data["payment"]["entry_type"] == "reversal"
+        assert rev_data["payment"]["amount_paise"] == 50000
+        assert rev_data["payment"]["reversed_payment_id"] == first_payment_id
+        # 2 receipts + 1 reversal = 3 immutable entries in ledger
+        assert len(rev_data["billing_record"]["payments"]) == 3
+        assert rev_data["billing_record"]["received_total_paise"] == 90000
+        assert rev_data["billing_record"]["outstanding_paise"] == 50000
+        assert rev_data["billing_record"]["payment_status"] == "partial"
+
+        # Double reversal of same receipt blocked
+        rev_again = await owner_client.post(
+            f"/api/v1/billing/records/offline_sale/{sale_id}/payments",
+            json={
+                "entry_type": "reversal",
+                "reversed_payment_id": first_payment_id,
+                "method": "upi",
+            },
+        )
+        assert rev_again.status_code == 400
+
+        # 6. Shared record test: Customer creates online enquiry, Owner pays via Billing,
+        #    and Admin immediately reflects updated payment_summary!
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as cust_client2:
+            await cust_client2.post(
+                "/api/v1/auth/login",
+                json={"email": "meena@example.com", "password": "Password123!"},
+            )
+            enq_resp = await cust_client2.post(
+                "/api/v1/enquiries",
+                json={"items": [{"product_id": prod_id, "variant_id": var_id, "quantity": 2}]},
+            )
+            assert enq_resp.status_code == 201
+            enquiry_id = enq_resp.json()["data"]["id"]  # ₹1300 (130000 paise)
+
+        # Record ₹300 partial payment on the online enquiry via Billing
+        enq_pay = await owner_client.post(
+            f"/api/v1/billing/records/enquiry/{enquiry_id}/payments",
+            json={
+                "entry_type": "receipt",
+                "amount_paise": 30000,
+                "method": "bank_transfer",
+                "reference_number": "NEFT-99",
+                "idempotency_key": "enq-pay-1",
+            },
+        )
+        assert enq_pay.status_code == 201
+
+        # Admin endpoint reads the exact same shared enquiry document and sees partial payment
+        admin_enq = await owner_client.get(f"/api/v1/admin/enquiries/{enquiry_id}")
+        assert admin_enq.status_code == 200
+        admin_pay_sum = admin_enq.json()["data"]["payment_summary"]
+        assert admin_pay_sum["received_total_paise"] == 30000
+        assert admin_pay_sum["outstanding_paise"] == 100000
+        assert admin_pay_sum["payment_status"] == "partial"
+
+        # Admin cannot lower quote below already-received ₹300
+        bad_quote = await owner_client.patch(
+            f"/api/v1/admin/enquiries/{enquiry_id}/quote",
+            json={"quoted_total_paise": 20000},
+        )
+        assert bad_quote.status_code == 400
+
+        # 7. Reconciliation check & repair
+        clean_rec = await owner_client.get("/api/v1/billing/reconciliation")
+        assert clean_rec.status_code == 200
+        assert clean_rec.json()["data"]["mismatched_records"] == 0
+
+        # Simulate drifted denormalized summary directly in DB and verify reconciliation repairs it
+        await db_manager.db.enquiries.update_one(
+            {"_id": ObjectId(enquiry_id)},
+            {"$set": {"payment_summary.received_total_paise": 0}},
+        )
+        drift_rec = await owner_client.get("/api/v1/billing/reconciliation")
+        assert drift_rec.json()["data"]["mismatched_records"] == 1
+
+        repair_rec = await owner_client.post("/api/v1/billing/reconciliation/repair")
+        assert repair_rec.status_code == 200
+        assert repair_rec.json()["data"]["repaired_records"] == 1
+
+        post_repair = await owner_client.get("/api/v1/billing/reconciliation")
+        assert post_repair.json()["data"]["mismatched_records"] == 0
+

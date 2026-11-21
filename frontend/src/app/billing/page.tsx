@@ -11,6 +11,7 @@ import {
   Globe,
   IndianRupee,
   LogOut,
+  Plus,
   Receipt,
   Search,
   Store,
@@ -190,6 +191,13 @@ export default function BillingDashboardPage() {
               Enquiries
             </Link>
           </nav>
+          <Link
+            href="/billing/offline-sales/new"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C69A48] hover:bg-[#b58a3a] text-black font-semibold text-xs transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Offline Sale
+          </Link>
           <button
             onClick={handleLogout}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition-colors"

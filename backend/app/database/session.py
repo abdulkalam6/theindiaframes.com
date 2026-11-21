@@ -4,14 +4,17 @@ Follows MongoDB's PyMongo Async specification (AsyncMongoClient).
 """
 
 import logging
-from typing import Optional
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 from pymongo import AsyncMongoClient
+from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.errors import OperationFailure
 
 from app.core.config import settings
 
 logger = logging.getLogger("the_india_frames.database")
+T = TypeVar("T")
 
 
 class DatabaseManager:
@@ -67,3 +70,29 @@ db_manager = DatabaseManager()
 
 def get_db() -> Optional[AsyncDatabase]:
     return db_manager.db
+
+
+async def run_in_transaction(
+    db: AsyncDatabase,
+    fn: Callable[[Optional[AsyncClientSession]], Awaitable[T]],
+) -> T:
+    """
+    Execute an async operation inside a MongoDB transaction when supported (Atlas /
+    replica set). Gracefully falls back to non-transactional execution ONLY when
+    running against a local standalone MongoDB instance (error code 20 / 263).
+    """
+    client: Any = getattr(db, "client", None)
+    if client is None:
+        return await fn(None)
+
+    async with client.start_session() as session:
+        try:
+            async with await session.start_transaction():
+                return await fn(session)
+        except OperationFailure as exc:
+            if exc.code in (20, 263) or "replica set" in str(exc).lower():
+                logger.debug(
+                    "MongoDB standalone deployment detected; executing without multi-doc transaction."
+                )
+                return await fn(None)
+            raise

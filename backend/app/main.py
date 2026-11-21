@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.cart import router as cart_router
 from app.api.v1.catalogue import router as catalogue_router
 from app.api.v1.wholesale import router as wholesale_router
 from app.core.config import settings
@@ -58,6 +59,7 @@ async def request_context_middleware(request: Request, call_next):
 
 # Include API Routers
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(cart_router, prefix=settings.API_V1_PREFIX)
 app.include_router(catalogue_router, prefix=settings.API_V1_PREFIX)
 app.include_router(wholesale_router, prefix=settings.API_V1_PREFIX)
 

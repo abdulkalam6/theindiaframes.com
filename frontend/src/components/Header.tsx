@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ShoppingBag, User, Menu, X, Phone } from "lucide-react";
+import { useCartStore } from "@/stores/cart";
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const totalItems = useCartStore((state) => state.getTotalItems());
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const navLinks = [
     { label: "Photo Frames", href: "/products?category=photo-frames" },
@@ -89,7 +96,7 @@ export function Header() {
             <ShoppingBag className="w-4 h-4 text-[#E3C27B]" />
             <span className="hidden sm:inline font-medium">Cart</span>
             <span className="ml-1 px-1.5 py-0.2 text-[11px] font-bold bg-[#C69A48] text-black rounded-full">
-              0
+              {mounted ? totalItems : 0}
             </span>
           </Link>
 

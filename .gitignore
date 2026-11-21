@@ -1,0 +1,45 @@
+# Environments and dependencies
+.venv/
+env/
+venv/
+node_modules/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Next.js & Frontend
+.next/
+out/
+build/
+dist/
+.turbo/
+
+# Environment files and credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# Operating system and editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local uploads and temporary files
+uploads/
+tmp/
+*.log

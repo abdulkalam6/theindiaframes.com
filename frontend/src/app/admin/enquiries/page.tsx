@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
-import { Filter, LogOut } from "lucide-react";
+import { AdminNav } from "@/components/AdminNav";
+import { Filter } from "lucide-react";
 
 interface EnquiryItem {
   id: string;
@@ -71,7 +71,6 @@ function formatDate(iso: string): string {
 }
 
 export default function AdminEnquiriesPage() {
-  const router = useRouter();
   const [enquiries, setEnquiries] = useState<EnquiryItem[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -98,55 +97,9 @@ export default function AdminEnquiriesPage() {
     load();
   }, [statusFilter]);
 
-  const handleLogout = async () => {
-    await apiClient("auth/logout", { method: "POST" });
-    router.push("/");
-  };
-
   return (
     <div className="min-h-screen bg-[#060e1a] text-white">
-      <header className="border-b border-slate-800 bg-[#080f1d] px-6 py-4 flex items-center justify-between">
-        <div>
-          <span className="text-xs text-[#C69A48] font-semibold uppercase tracking-widest">
-            Owner Panel
-          </span>
-          <h1 className="text-lg font-serif font-bold text-white leading-tight">
-            Enquiries
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-            <Link href="/admin" className="hover:text-white transition-colors">
-              Dashboard
-            </Link>
-            <Link
-              href="/admin/enquiries"
-              className="text-[#E3C27B] font-semibold"
-            >
-              Enquiries
-            </Link>
-            <Link
-              href="/admin/customers"
-              className="hover:text-white transition-colors"
-            >
-              Customers
-            </Link>
-            <Link
-              href="/billing"
-              className="hover:text-white transition-colors"
-            >
-              Billing
-            </Link>
-          </nav>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5 text-red-400" />
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <AdminNav title="Enquiries" />
 
       <main className="max-w-6xl mx-auto px-6 py-10 space-y-6">
         <div className="flex items-center gap-2 flex-wrap">

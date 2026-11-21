@@ -201,3 +201,40 @@ class AdminService:
                 )
             )
         return users
+
+    async def list_audit_logs(
+        self,
+        entity_type: Optional[str] = None,
+        action: Optional[str] = None,
+        limit: int = 50,
+        skip: int = 0,
+    ) -> List[dict]:
+        query: dict = {}
+        if entity_type:
+            query["entity_type"] = entity_type
+        if action:
+            query["action"] = action
+        cursor = (
+            self.db.audit_logs.find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        rows = []
+        async for doc in cursor:
+            rows.append(
+                {
+                    "id": str(doc["_id"]),
+                    "actor_user_id": str(doc.get("actor_user_id", "")),
+                    "action": doc.get("action", ""),
+                    "entity_type": doc.get("entity_type", ""),
+                    "entity_id": str(doc.get("entity_id", "")),
+                    "before": doc.get("before", {}),
+                    "after": doc.get("after", {}),
+                    "request_id": doc.get("request_id"),
+                    "created_at": doc["created_at"].isoformat()
+                    if hasattr(doc.get("created_at"), "isoformat")
+                    else doc.get("created_at"),
+                }
+            )
+        return rows

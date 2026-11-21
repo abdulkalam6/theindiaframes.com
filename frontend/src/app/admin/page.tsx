@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
+import { AdminNav } from "@/components/AdminNav";
 import {
   BarChart3,
   ClipboardList,
-  LogOut,
   ShoppingBag,
   Users,
 } from "lucide-react";
@@ -71,7 +70,6 @@ function formatDate(iso: string): string {
 }
 
 export default function AdminDashboardPage() {
-  const router = useRouter();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +91,6 @@ export default function AdminDashboardPage() {
     }
     load();
   }, []);
-
-  const handleLogout = async () => {
-    await apiClient("auth/logout", { method: "POST" });
-    router.push("/");
-  };
 
   if (loading) {
     return (
@@ -153,48 +146,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#060e1a] text-white">
-      <header className="border-b border-slate-800 bg-[#080f1d] px-6 py-4 flex items-center justify-between">
-        <div>
-          <span className="text-xs text-[#C69A48] font-semibold uppercase tracking-widest">
-            Owner Panel
-          </span>
-          <h1 className="text-lg font-serif font-bold text-white leading-tight">
-            Admin Dashboard
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-            <Link href="/admin" className="text-[#E3C27B] font-semibold">
-              Dashboard
-            </Link>
-            <Link
-              href="/admin/enquiries"
-              className="hover:text-white transition-colors"
-            >
-              Enquiries
-            </Link>
-            <Link
-              href="/admin/customers"
-              className="hover:text-white transition-colors"
-            >
-              Customers
-            </Link>
-            <Link
-              href="/billing"
-              className="hover:text-white transition-colors"
-            >
-              Billing
-            </Link>
-          </nav>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5 text-red-400" />
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <AdminNav title="Admin Dashboard" />
 
       <main className="max-w-6xl mx-auto px-6 py-10 space-y-10">
         <section>

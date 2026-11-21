@@ -3,49 +3,100 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { ShoppingBag, User, Menu, X, Phone } from "lucide-react";
+import { ShoppingBag, User, Menu, X, Phone, ShieldCheck } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
+import { apiClient } from "@/lib/api";
+
+interface NavUser {
+  id: string;
+  name: string;
+  account_type: "retail" | "wholesale" | "owner";
+  wholesale_status: "not_applied" | "pending" | "approved" | "rejected";
+}
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const totalItems = useCartStore((state) => state.getTotalItems());
   const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<NavUser | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    let active = true;
+    apiClient<NavUser>("auth/me")
+      .then((res) => {
+        if (active && res.data) setUser(res.data);
+      })
+      .catch(() => {
+        // Visitor mode
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const navLinks = [
     { label: "Photo Frames", href: "/products?category=photo-frames" },
     { label: "Glass & Backing", href: "/products?category=glass-and-backing" },
-    { label: "Lamination Machines", href: "/products?category=lamination-machines" },
-    { label: "Lamination Films", href: "/products?category=lamination-consumables" },
+    {
+      label: "Lamination Machines",
+      href: "/products?category=lamination-machines",
+    },
+    {
+      label: "Lamination Films",
+      href: "/products?category=lamination-consumables",
+    },
     { label: "Services", href: "/services" },
     { label: "Personalised Gifts", href: "/personalised-gifts" },
     { label: "Wholesale", href: "/wholesale" },
     { label: "About & Contact", href: "/contact" },
   ];
 
+  const firstName = user?.name?.split(" ")[0] ?? "";
+
   return (
-    <header className="sticky top-0 z-50 bg-[#071421]/95 backdrop-blur border-b border-[#C69A48]/20 transition-all">
+    <header className="sticky top-0 z-50 bg-[#071421]/95 backdrop-blur border-b border-[#C69A48]/20 transition-all print:hidden">
       {/* Top Announcement Bar */}
       <div className="bg-[#080B10] border-b border-[#C69A48]/15 px-4 py-1.5 text-xs text-[#E3C27B] flex items-center justify-between">
-        <div className="container mx-auto flex items-center justify-between">
+        <div className="container mx-auto flex items-center justify-between gap-2">
           <p className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-[#C69A48] animate-pulse" />
-            <span>Retail &amp; Business Wholesale Supplier • Cumbum, Tamil Nadu</span>
+            <span>
+              Retail &amp; Business Wholesale Supplier • Cumbum, Tamil Nadu
+            </span>
           </p>
           <div className="hidden sm:flex items-center gap-4 text-xs text-slate-300">
-            <span className="flex items-center gap-1">
-              <Phone className="w-3 h-3 text-[#C69A48]" /> Owner Direct Support
-            </span>
+            {user?.account_type === "owner" ? (
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/admin"
+                  className="text-[#E3C27B] hover:text-white font-semibold"
+                >
+                  Admin Panel
+                </Link>
+                <Link
+                  href="/billing"
+                  className="text-[#E3C27B] hover:text-white font-semibold"
+                >
+                  Billing Portal
+                </Link>
+              </div>
+            ) : user?.wholesale_status === "approved" ? (
+              <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5" /> Wholesale Pricing Active
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Phone className="w-3 h-3 text-[#C69A48]" /> Owner Direct
+                Support
+              </span>
+            )}
           </div>
         </div>
       </div>
 
       {/* Main Navigation Bar */}
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        {/* Brand Logo & Wordmark */}
         <Link href="/" className="flex items-center gap-3 group">
           <div className="relative w-36 h-14 sm:w-44 sm:h-16 transition-transform group-hover:scale-[1.02]">
             <Image
@@ -77,15 +128,17 @@ export function Header() {
           </Link>
         </nav>
 
-        {/* Action Controls: Account, Cart, Mobile Toggle */}
+        {/* Action Controls */}
         <div className="flex items-center gap-3">
           <Link
-            href="/login"
+            href={user ? "/account" : "/login"}
             className="flex items-center gap-1.5 text-xs sm:text-sm text-slate-200 hover:text-[#E3C27B] p-2 rounded-lg hover:bg-slate-800/50 transition-colors"
-            aria-label="Account Login"
+            aria-label={user ? "My Account" : "Account Login"}
           >
             <User className="w-4 h-4 text-[#C69A48]" />
-            <span className="hidden sm:inline">Account</span>
+            <span className="hidden sm:inline">
+              {user ? firstName : "Sign In"}
+            </span>
           </Link>
 
           <Link
@@ -100,13 +153,16 @@ export function Header() {
             </span>
           </Link>
 
-          {/* Mobile menu trigger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="lg:hidden p-2 text-slate-300 hover:text-white rounded-lg hover:bg-slate-800"
             aria-label="Toggle navigation menu"
           >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {mobileMenuOpen ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
           </button>
         </div>
       </div>
@@ -125,6 +181,24 @@ export function Header() {
                 {link.label}
               </Link>
             ))}
+            {user?.account_type === "owner" && (
+              <>
+                <Link
+                  href="/admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="py-2 px-3 text-[#E3C27B] font-semibold hover:bg-slate-800/40 rounded text-sm"
+                >
+                  Owner Admin Panel
+                </Link>
+                <Link
+                  href="/billing"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="py-2 px-3 text-[#E3C27B] font-semibold hover:bg-slate-800/40 rounded text-sm"
+                >
+                  Owner Billing Portal
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       )}

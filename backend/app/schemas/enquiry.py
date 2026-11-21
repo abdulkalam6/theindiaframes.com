@@ -15,6 +15,7 @@ class CustomPhotoSnapshot(BaseModel):
     original_filename: str
     mime_type: str
     size_bytes: int
+    has_original: bool = False
     edit_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -23,6 +24,7 @@ class CustomPhotoUploadResponse(BaseModel):
     original_filename: str
     mime_type: str
     size_bytes: int
+    has_original: bool = False
     edit_settings: Dict[str, Any] = Field(default_factory=dict)
 
 

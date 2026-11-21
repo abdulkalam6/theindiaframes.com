@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { ArrowLeft, Lock, Mail, ShieldAlert } from "lucide-react";
 
 interface LoginResult {
@@ -132,6 +133,19 @@ function LoginFormContent() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+
+        <GoogleSignInButton
+          onSuccess={(acctType) => {
+            const safeRedirect =
+              redirectParam && redirectParam.startsWith("/")
+                ? redirectParam
+                : null;
+            router.push(
+              safeRedirect || (acctType === "owner" ? "/admin" : "/account")
+            );
+          }}
+          onError={(msg) => setErrorMsg(msg)}
+        />
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-400">
           Don&apos;t have an account?{" "}

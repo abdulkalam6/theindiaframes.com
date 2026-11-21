@@ -5,19 +5,24 @@ import { API_BASE_URL } from "@/lib/api";
 import type { CartCustomPhoto } from "@/stores/cart";
 import {
   AlignCenter,
+  AlertTriangle,
   Bold,
   Check,
+  CheckCircle2,
   Copy,
   Crop,
+  Eye,
   FlipHorizontal2,
   FlipVertical2,
   Frame,
+  Grid2X2,
   ImagePlus,
   Italic,
   Loader2,
   Move,
   Palette,
   Plus,
+  Redo2,
   RotateCcw,
   RotateCw,
   ShieldAlert,
@@ -26,6 +31,7 @@ import {
   Sparkles,
   Trash2,
   Type,
+  Undo2,
   ZoomIn,
 } from "lucide-react";
 
@@ -41,6 +47,7 @@ interface FramePhotoEditorProps {
 type EditorTab = "crop" | "adjust" | "text" | "mat";
 type Orientation = "portrait" | "landscape";
 type FitMode = "cover" | "contain";
+type CollageLayout = "single" | "dual" | "triple" | "quad";
 type MatWidth = "none" | "thin" | "medium" | "wide";
 type CornerAccent = "none" | "gold_corners" | "double_border";
 type ColorPreset =
@@ -51,15 +58,20 @@ type ColorPreset =
   | "vintage"
   | "cool"
   | "dramatic";
-type FramePreviewStyle = "auto" | "teak_gold" | "matte_black" | "walnut" | "royal_gold";
+type FramePreviewStyle =
+  | "auto"
+  | "teak_gold"
+  | "matte_black"
+  | "walnut"
+  | "royal_gold";
 
 interface TextLayer {
   id: string;
   text: string;
-  x: number; // normalized 0..1 across inner canvas
-  y: number; // normalized 0..1 across inner canvas
+  x: number;
+  y: number;
   fontFamily: string;
-  fontSize: number; // relative size (16..96 on 1000px base)
+  fontSize: number;
   color: string;
   bold: boolean;
   italic: boolean;
@@ -67,6 +79,30 @@ interface TextLayer {
   bgPill: boolean;
   rotation: number;
   opacity: number;
+}
+
+interface EditorSnapshot {
+  orientation: Orientation;
+  fitMode: FitMode;
+  collageLayout: CollageLayout;
+  zoom: number;
+  panX: number;
+  panY: number;
+  rotation90: number;
+  straighten: number;
+  flipH: boolean;
+  flipV: boolean;
+  preset: ColorPreset;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  sepia: number;
+  vignette: number;
+  matWidth: MatWidth;
+  matColor: string;
+  goldLine: boolean;
+  cornerAccent: CornerAccent;
+  textLayers: TextLayer[];
 }
 
 interface FrameStyleConfig {
@@ -77,7 +113,10 @@ interface FrameStyleConfig {
 const FONT_OPTIONS = [
   { label: "Classic Serif", value: "Georgia, 'Times New Roman', serif" },
   { label: "Modern Sans", value: "Arial, Helvetica, sans-serif" },
-  { label: "Elegant Script", value: "'Brush Script MT', 'Segoe Script', cursive" },
+  {
+    label: "Elegant Script",
+    value: "'Brush Script MT', 'Segoe Script', cursive",
+  },
   { label: "Bold Display", value: "Impact, 'Arial Black', sans-serif" },
   { label: "Typewriter", value: "'Courier New', Courier, monospace" },
 ];
@@ -118,7 +157,14 @@ const PRESET_LIST: Array<{ id: ColorPreset; label: string }> = [
   { id: "dramatic", label: "Dramatic" },
 ];
 
-function parseAspectRatio(variantLabel: string): [number, number] {
+const COLLAGE_SLOTS: Record<CollageLayout, number> = {
+  single: 1,
+  dual: 2,
+  triple: 3,
+  quad: 4,
+};
+
+function parseFrameInches(variantLabel: string): [number, number] {
   const lower = variantLabel.toLowerCase();
   if (lower.includes("a4")) return [8.3, 11.7];
   const m = lower.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
@@ -129,7 +175,7 @@ function parseAspectRatio(variantLabel: string): [number, number] {
       return a <= b ? [a, b] : [b, a];
     }
   }
-  return [2, 3];
+  return [8, 12];
 }
 
 function getFrameStyle(
@@ -181,6 +227,49 @@ function buildCssFilter(
   return parts.join(" ");
 }
 
+function getCollageRects(
+  layout: CollageLayout,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  gap: number
+): Array<{ x: number; y: number; w: number; h: number }> {
+  if (layout === "single") return [{ x, y, w, h }];
+  if (layout === "dual") {
+    if (w >= h) {
+      const cw = (w - gap) / 2;
+      return [
+        { x, y, w: cw, h },
+        { x: x + cw + gap, y, w: cw, h },
+      ];
+    }
+    const ch = (h - gap) / 2;
+    return [
+      { x, y, w, h: ch },
+      { x, y: y + ch + gap, w, h: ch },
+    ];
+  }
+  if (layout === "triple") {
+    const topH = (h - gap) * 0.56;
+    const botH = h - gap - topH;
+    const halfW = (w - gap) / 2;
+    return [
+      { x, y, w, h: topH },
+      { x, y: y + topH + gap, w: halfW, h: botH },
+      { x: x + halfW + gap, y: y + topH + gap, w: halfW, h: botH },
+    ];
+  }
+  const halfW = (w - gap) / 2;
+  const halfH = (h - gap) / 2;
+  return [
+    { x, y, w: halfW, h: halfH },
+    { x: x + halfW + gap, y, w: halfW, h: halfH },
+    { x, y: y + halfH + gap, w: halfW, h: halfH },
+    { x: x + halfW + gap, y: y + halfH + gap, w: halfW, h: halfH },
+  ];
+}
+
 export function FramePhotoEditor({
   productName,
   variantLabel,
@@ -191,14 +280,25 @@ export function FramePhotoEditor({
 }: FramePhotoEditorProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const slotInputIdxRef = useRef<number>(0);
 
   const [activeTab, setActiveTab] = useState<EditorTab>("crop");
-  const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
+  const [wallPreview, setWallPreview] = useState<boolean>(false);
+
+  // Up to 4 collage slots (slot 0 is the primary image)
+  const [slotImages, setSlotImages] = useState<Array<HTMLImageElement | null>>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [primaryFile, setPrimaryFile] = useState<File | null>(null);
   const [originalFilename, setOriginalFilename] = useState<string>("");
 
   // Crop & Transform
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [fitMode, setFitMode] = useState<FitMode>("cover");
+  const [collageLayout, setCollageLayout] = useState<CollageLayout>("single");
   const [zoom, setZoom] = useState<number>(1);
   const [panX, setPanX] = useState<number>(0);
   const [panY, setPanY] = useState<number>(0);
@@ -226,7 +326,10 @@ export function FramePhotoEditor({
   const [textLayers, setTextLayers] = useState<TextLayer[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
-  // Dragging (either photo pan OR dragging the selected text layer!)
+  // Undo / Redo History Stack
+  const [history, setHistory] = useState<EditorSnapshot[]>([]);
+  const [historyIdx, setHistoryIdx] = useState<number>(-1);
+
   const dragRef = useRef<{
     mode: "none" | "photo" | "text";
     textId: string | null;
@@ -247,23 +350,154 @@ export function FramePhotoEditor({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const [baseW, baseH] = parseAspectRatio(variantLabel);
-  const ratioW = orientation === "portrait" ? baseW : baseH;
-  const ratioH = orientation === "portrait" ? baseH : baseW;
+  const loadedImage = slotImages[0];
+  const [baseInW, baseInH] = parseFrameInches(variantLabel);
+  const physW = orientation === "portrait" ? baseInW : baseInH;
+  const physH = orientation === "portrait" ? baseInH : baseInW;
   const frameStyle = getFrameStyle(productName, framePreview);
 
   const selectedText =
     textLayers.find((t) => t.id === selectedTextId) ?? null;
 
+  // Print DPI computation for primary uploaded photo
+  const dpiInfo = (() => {
+    if (!loadedImage) return null;
+    const swapped = Math.abs(rotation90 % 180) === 90;
+    const natW = swapped ? loadedImage.naturalHeight : loadedImage.naturalWidth;
+    const natH = swapped ? loadedImage.naturalWidth : loadedImage.naturalHeight;
+    const effectiveDpi = Math.round(
+      Math.min(natW / (physW * zoom), natH / (physH * zoom))
+    );
+    if (effectiveDpi >= 180) {
+      return {
+        dpi: effectiveDpi,
+        level: "excellent" as const,
+        label: `Excellent Print Quality (~${effectiveDpi} DPI for ${physW}×${physH}")`,
+      };
+    }
+    if (effectiveDpi >= 110) {
+      return {
+        dpi: effectiveDpi,
+        level: "good" as const,
+        label: `Good Print Quality (~${effectiveDpi} DPI for ${physW}×${physH}")`,
+      };
+    }
+    return {
+      dpi: effectiveDpi,
+      level: "low" as const,
+      label: `Low Resolution (~${effectiveDpi} DPI for ${physW}×${physH}") — consider less zoom, a higher-res photo, or a smaller frame`,
+    };
+  })();
+
+  const captureSnapshot = useCallback(
+    (): EditorSnapshot => ({
+      orientation,
+      fitMode,
+      collageLayout,
+      zoom,
+      panX,
+      panY,
+      rotation90,
+      straighten,
+      flipH,
+      flipV,
+      preset,
+      brightness,
+      contrast,
+      saturation,
+      sepia,
+      vignette,
+      matWidth,
+      matColor,
+      goldLine,
+      cornerAccent,
+      textLayers: textLayers.map((t) => ({ ...t })),
+    }),
+    [
+      brightness,
+      collageLayout,
+      contrast,
+      cornerAccent,
+      fitMode,
+      flipH,
+      flipV,
+      goldLine,
+      matColor,
+      matWidth,
+      orientation,
+      panX,
+      panY,
+      preset,
+      rotation90,
+      saturation,
+      sepia,
+      straighten,
+      textLayers,
+      vignette,
+      zoom,
+    ]
+  );
+
+  const pushHistory = useCallback(() => {
+    const snap = captureSnapshot();
+    setHistory((prev) => {
+      const sliced = prev.slice(0, historyIdx + 1);
+      const next = [...sliced, snap].slice(-25);
+      setHistoryIdx(next.length - 1);
+      return next;
+    });
+  }, [captureSnapshot, historyIdx]);
+
+  const applySnapshot = (snap: EditorSnapshot) => {
+    setOrientation(snap.orientation);
+    setFitMode(snap.fitMode);
+    setCollageLayout(snap.collageLayout);
+    setZoom(snap.zoom);
+    setPanX(snap.panX);
+    setPanY(snap.panY);
+    setRotation90(snap.rotation90);
+    setStraighten(snap.straighten);
+    setFlipH(snap.flipH);
+    setFlipV(snap.flipV);
+    setPreset(snap.preset);
+    setBrightness(snap.brightness);
+    setContrast(snap.contrast);
+    setSaturation(snap.saturation);
+    setSepia(snap.sepia);
+    setVignette(snap.vignette);
+    setMatWidth(snap.matWidth);
+    setMatColor(snap.matColor);
+    setGoldLine(snap.goldLine);
+    setCornerAccent(snap.cornerAccent);
+    setTextLayers(snap.textLayers.map((t) => ({ ...t })));
+  };
+
+  const handleUndo = () => {
+    if (historyIdx <= 0) return;
+    const prevIdx = historyIdx - 1;
+    setHistoryIdx(prevIdx);
+    applySnapshot(history[prevIdx]);
+  };
+
+  const handleRedo = () => {
+    if (historyIdx >= history.length - 1) return;
+    const nextIdx = historyIdx + 1;
+    setHistoryIdx(nextIdx);
+    applySnapshot(history[nextIdx]);
+  };
+
   const renderComposition = useCallback(
     (
       canvas: HTMLCanvasElement,
-      img: HTMLImageElement,
+      images: Array<HTMLImageElement | null>,
       targetW: number,
       targetH: number,
       includeFrameChrome: boolean,
       showSelectionGuides: boolean
     ) => {
+      const primary = images[0];
+      if (!primary) return;
+
       canvas.width = targetW;
       canvas.height = targetH;
       const ctx = canvas.getContext("2d");
@@ -295,7 +529,6 @@ export function FramePhotoEditor({
       const innerW = targetW - frameBorder * 2;
       const innerH = targetH - frameBorder * 2;
 
-      // Mat border sizing
       const matFactor =
         matWidth === "none"
           ? 0
@@ -309,51 +542,70 @@ export function FramePhotoEditor({
       ctx.fillStyle = matWidth === "none" ? "#0B1726" : matColor;
       ctx.fillRect(innerX, innerY, innerW, innerH);
 
-      // Photo aperture
       const photoX = innerX + matPx;
       const photoY = innerY + matPx;
       const photoW = innerW - matPx * 2;
       const photoH = innerH - matPx * 2;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(photoX, photoY, photoW, photoH);
-      ctx.clip();
+      const gap = Math.max(4, Math.round(Math.min(photoW, photoH) * 0.02));
+      const cells = getCollageRects(
+        collageLayout,
+        photoX,
+        photoY,
+        photoW,
+        photoH,
+        gap
+      );
 
-      ctx.fillStyle = matWidth === "none" ? "#0B1726" : matColor;
-      ctx.fillRect(photoX, photoY, photoW, photoH);
-
-      const totalDeg = rotation90 + straighten;
-      const rad = (totalDeg * Math.PI) / 180;
-      const swapped = Math.abs(rotation90 % 180) === 90;
-      const effImgW = swapped ? img.naturalHeight : img.naturalWidth;
-      const effImgH = swapped ? img.naturalWidth : img.naturalHeight;
-
-      const baseScale =
-        fitMode === "cover"
-          ? Math.max(photoW / effImgW, photoH / effImgH)
-          : Math.min(photoW / effImgW, photoH / effImgH);
-
-      const drawW = img.naturalWidth * baseScale * zoom;
-      const drawH = img.naturalHeight * baseScale * zoom;
-
-      const centerX = photoX + photoW / 2 + panX * photoW * 0.5;
-      const centerY = photoY + photoH / 2 + panY * photoH * 0.5;
-
-      ctx.translate(centerX, centerY);
-      ctx.rotate(rad);
-      ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
-      ctx.filter = buildCssFilter(
+      const cssFilter = buildCssFilter(
         preset,
         brightness,
         contrast,
         saturation,
         sepia
       );
-      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-      ctx.restore();
 
-      // Optional Studio Vignette
+      cells.forEach((cell, idx) => {
+        const cellImg = images[idx] ?? primary;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cell.x, cell.y, cell.w, cell.h);
+        ctx.clip();
+
+        ctx.fillStyle = matWidth === "none" ? "#0B1726" : matColor;
+        ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+
+        const totalDeg = idx === 0 ? rotation90 + straighten : 0;
+        const rad = (totalDeg * Math.PI) / 180;
+        const swapped = idx === 0 && Math.abs(rotation90 % 180) === 90;
+        const effImgW = swapped ? cellImg.naturalHeight : cellImg.naturalWidth;
+        const effImgH = swapped ? cellImg.naturalWidth : cellImg.naturalHeight;
+
+        const baseScale =
+          fitMode === "cover" || collageLayout !== "single"
+            ? Math.max(cell.w / effImgW, cell.h / effImgH)
+            : Math.min(cell.w / effImgW, cell.h / effImgH);
+
+        const cellZoom = idx === 0 ? zoom : 1;
+        const drawW = cellImg.naturalWidth * baseScale * cellZoom;
+        const drawH = cellImg.naturalHeight * baseScale * cellZoom;
+
+        const cx =
+          cell.x + cell.w / 2 + (idx === 0 ? panX * cell.w * 0.5 : 0);
+        const cy =
+          cell.y + cell.h / 2 + (idx === 0 ? panY * cell.h * 0.5 : 0);
+
+        ctx.translate(cx, cy);
+        ctx.rotate(rad);
+        if (idx === 0) {
+          ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+        }
+        ctx.filter = cssFilter;
+        ctx.drawImage(cellImg, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+      });
+
+      // Studio Vignette
       if (vignette > 0) {
         ctx.save();
         ctx.beginPath();
@@ -407,19 +659,15 @@ export function FramePhotoEditor({
         const x2 = photoX + photoW - inset;
         const y2 = photoY + photoH - inset;
         ctx.beginPath();
-        // Top-left
         ctx.moveTo(x1, y1 + arm);
         ctx.lineTo(x1, y1);
         ctx.lineTo(x1 + arm, y1);
-        // Top-right
         ctx.moveTo(x2 - arm, y1);
         ctx.lineTo(x2, y1);
         ctx.lineTo(x2, y1 + arm);
-        // Bottom-left
         ctx.moveTo(x1, y2 - arm);
         ctx.lineTo(x1, y2);
         ctx.lineTo(x1 + arm, y2);
-        // Bottom-right
         ctx.moveTo(x2 - arm, y2);
         ctx.lineTo(x2, y2);
         ctx.lineTo(x2, y2 - arm);
@@ -455,12 +703,14 @@ export function FramePhotoEditor({
 
         if (layer.bgPill) {
           ctx.fillStyle = "rgba(7, 20, 33, 0.72)";
-          const rx = -maxLineW / 2 - padX;
-          const ry = -totalH / 2 - padY;
-          const rw = maxLineW + padX * 2;
-          const rh = totalH + padY * 2;
           ctx.beginPath();
-          ctx.roundRect(rx, ry, rw, rh, pxSize * 0.25);
+          ctx.roundRect(
+            -maxLineW / 2 - padX,
+            -totalH / 2 - padY,
+            maxLineW + padX * 2,
+            totalH + padY * 2,
+            pxSize * 0.25
+          );
           ctx.fill();
         }
 
@@ -477,7 +727,6 @@ export function FramePhotoEditor({
           ctx.fillText(ln, 0, offsetY);
         });
 
-        // Subtle dashed highlight box on selected text in preview mode only
         if (showSelectionGuides && layer.id === selectedTextId) {
           ctx.shadowColor = "transparent";
           ctx.strokeStyle = "#E3C27B";
@@ -490,12 +739,12 @@ export function FramePhotoEditor({
             totalH + padY * 2
           );
         }
-
         ctx.restore();
       }
     },
     [
       brightness,
+      collageLayout,
       contrast,
       cornerAccent,
       fitMode,
@@ -520,19 +769,75 @@ export function FramePhotoEditor({
     ]
   );
 
-  // Redraw preview canvas
+  // Redraw preview canvas (either Close-Up Editor OR Wall-Room Scale Preview!)
   useEffect(() => {
     const canvas = previewCanvasRef.current;
     if (!canvas || !loadedImage) return;
 
-    const maxPreview = 460;
-    const scale = maxPreview / Math.max(ratioW, ratioH);
-    const w = Math.round(ratioW * scale);
-    const h = Math.round(ratioH * scale);
-    renderComposition(canvas, loadedImage, w, h, true, true);
-  }, [loadedImage, ratioW, ratioH, renderComposition]);
+    if (!wallPreview) {
+      const maxPreview = 460;
+      const scale = maxPreview / Math.max(physW, physH);
+      renderComposition(
+        canvas,
+        slotImages,
+        Math.round(physW * scale),
+        Math.round(physH * scale),
+        true,
+        true
+      );
+      return;
+    }
 
-  const handleFileSelected = (file: File) => {
+    // Room-Wall Scale Preview (shows realistic physical proportion vs living room console)
+    const roomW = 540;
+    const roomH = 400;
+    canvas.width = roomW;
+    canvas.height = roomH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Warm gallery wall gradient
+    const wallGrad = ctx.createLinearGradient(0, 0, 0, roomH);
+    wallGrad.addColorStop(0, "#E7DFD3");
+    wallGrad.addColorStop(0.75, "#D9CEBD");
+    wallGrad.addColorStop(1, "#C9BCA8");
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, 0, roomW, roomH);
+
+    // Subtle console/sofa silhouette at bottom (~60 inches wide across 540px => ~9px per inch)
+    const pxPerInch = 8.2;
+    ctx.fillStyle = "#3E3229";
+    ctx.fillRect(60, 326, 420, 74);
+    ctx.fillStyle = "#524236";
+    ctx.fillRect(50, 318, 440, 12);
+
+    // Render framed art scaled accurately in inches
+    const artW = Math.max(48, Math.round(physW * pxPerInch));
+    const artH = Math.max(48, Math.round(physH * pxPerInch));
+    const offscreen = document.createElement("canvas");
+    renderComposition(offscreen, slotImages, artW, artH, true, false);
+
+    const artX = Math.round((roomW - artW) / 2);
+    const artY = Math.round(170 - artH / 2);
+
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+    ctx.drawImage(offscreen, artX, artY, artW, artH);
+    ctx.restore();
+
+    // Scale label
+    ctx.fillStyle = "rgba(7, 20, 33, 0.78)";
+    ctx.beginPath();
+    ctx.roundRect(14, 14, 210, 28, 6);
+    ctx.fill();
+    ctx.fillStyle = "#E3C27B";
+    ctx.font = "bold 12px Arial, sans-serif";
+    ctx.fillText(`Wall Scale Preview · ${physW} × ${physH} in`, 24, 32);
+  }, [loadedImage, physW, physH, renderComposition, slotImages, wallPreview]);
+
+  const handleFileForSlot = (file: File, slotIdx: number) => {
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -549,18 +854,27 @@ export function FramePhotoEditor({
     reader.onload = () => {
       const img = new window.Image();
       img.onload = () => {
-        setLoadedImage(img);
-        setOriginalFilename(file.name);
-        setOrientation(
-          img.naturalWidth > img.naturalHeight ? "landscape" : "portrait"
-        );
-        setZoom(1);
-        setPanX(0);
-        setPanY(0);
-        setRotation90(0);
-        setStraighten(0);
-        setFlipH(false);
-        setFlipV(false);
+        setSlotImages((prev) => {
+          const next = [...prev];
+          next[slotIdx] = img;
+          return next;
+        });
+        if (slotIdx === 0) {
+          setPrimaryFile(file);
+          setOriginalFilename(file.name);
+          setOrientation(
+            img.naturalWidth > img.naturalHeight ? "landscape" : "portrait"
+          );
+          setZoom(1);
+          setPanX(0);
+          setPanY(0);
+          setRotation90(0);
+          setStraighten(0);
+          setFlipH(false);
+          setFlipV(false);
+          setHistory([]);
+          setHistoryIdx(-1);
+        }
       };
       img.onerror = () => {
         setErrorMsg("Could not decode the selected image file.");
@@ -570,8 +884,15 @@ export function FramePhotoEditor({
     reader.readAsDataURL(file);
   };
 
+  const triggerSlotUpload = (slotIdx: number) => {
+    slotInputIdxRef.current = slotIdx;
+    fileInputRef.current?.click();
+  };
+
   const resetAllEdits = () => {
+    pushHistory();
     setFitMode("cover");
+    setCollageLayout("single");
     setZoom(1);
     setPanX(0);
     setPanY(0);
@@ -593,8 +914,8 @@ export function FramePhotoEditor({
     setSelectedTextId(null);
   };
 
-  // Text Layer CRUD
   const addTextLayer = (initialText = "Your Custom Text") => {
+    pushHistory();
     const id = `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newLayer: TextLayer = {
       id,
@@ -603,7 +924,8 @@ export function FramePhotoEditor({
       y: matWidth !== "none" ? 0.94 : 0.85,
       fontFamily: FONT_OPTIONS[0].value,
       fontSize: 28,
-      color: matWidth !== "none" && matColor === "#FFFFFF" ? "#111827" : "#FFFFFF",
+      color:
+        matWidth !== "none" && matColor === "#FFFFFF" ? "#111827" : "#FFFFFF",
       bold: true,
       italic: false,
       shadow: matWidth === "none",
@@ -614,6 +936,7 @@ export function FramePhotoEditor({
     setTextLayers((prev) => [...prev, newLayer]);
     setSelectedTextId(id);
     setActiveTab("text");
+    setWallPreview(false);
   };
 
   const updateSelectedText = (patch: Partial<TextLayer>) => {
@@ -624,6 +947,7 @@ export function FramePhotoEditor({
   };
 
   const deleteTextLayer = (id: string) => {
+    pushHistory();
     setTextLayers((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (selectedTextId === id) {
@@ -635,6 +959,7 @@ export function FramePhotoEditor({
 
   const duplicateSelectedText = () => {
     if (!selectedText) return;
+    pushHistory();
     const copy: TextLayer = {
       ...selectedText,
       id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -644,9 +969,8 @@ export function FramePhotoEditor({
     setSelectedTextId(copy.id);
   };
 
-  // Smart Pointer Handling: hit-test text layers first so users can drag text directly!
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!loadedImage) return;
+    if (!loadedImage || wallPreview) return;
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -654,8 +978,8 @@ export function FramePhotoEditor({
     const normY = (e.clientY - rect.top) / rect.height;
 
     e.currentTarget.setPointerCapture(e.pointerId);
+    pushHistory();
 
-    // Hit-test text layers (topmost first)
     for (let i = textLayers.length - 1; i >= 0; i--) {
       const t = textLayers[i];
       if (Math.abs(normX - t.x) < 0.22 && Math.abs(normY - t.y) < 0.09) {
@@ -718,34 +1042,31 @@ export function FramePhotoEditor({
     setSuccessMsg(null);
 
     try {
-      // 1. Export high-res PRINT-READY canvas (no screen frame chrome, no selection guides)
       const printLongEdge = 1800;
-      const printScale = printLongEdge / Math.max(ratioW, ratioH);
-      const printW = Math.round(ratioW * printScale);
-      const printH = Math.round(ratioH * printScale);
+      const printScale = printLongEdge / Math.max(physW, physH);
+      const printW = Math.round(physW * printScale);
+      const printH = Math.round(physH * printScale);
 
       const printCanvas = document.createElement("canvas");
-      renderComposition(printCanvas, loadedImage, printW, printH, false, false);
+      renderComposition(printCanvas, slotImages, printW, printH, false, false);
 
       const blob = await new Promise<Blob | null>((resolve) =>
         printCanvas.toBlob(resolve, "image/jpeg", 0.93)
       );
       if (!blob) throw new Error("Failed to export edited image.");
 
-      // 2. Compact framed thumbnail for Cart & Checkout
       const thumbCanvas = document.createElement("canvas");
-      const thumbScale = 260 / Math.max(ratioW, ratioH);
+      const thumbScale = 260 / Math.max(physW, physH);
       renderComposition(
         thumbCanvas,
-        loadedImage,
-        Math.round(ratioW * thumbScale),
-        Math.round(ratioH * thumbScale),
+        slotImages,
+        Math.round(physW * thumbScale),
+        Math.round(physH * thumbScale),
         true,
         false
       );
       const previewDataUrl = thumbCanvas.toDataURL("image/jpeg", 0.78);
 
-      // 3. Upload print-ready image to private backend storage
       const nonEmptyTexts = textLayers
         .filter((t) => t.text.trim())
         .map((t) => t.text.trim());
@@ -755,6 +1076,7 @@ export function FramePhotoEditor({
         sku,
         orientation,
         fitMode,
+        collageLayout,
         zoom: Number(zoom.toFixed(2)),
         rotation: rotation90 + straighten,
         flipH,
@@ -768,6 +1090,7 @@ export function FramePhotoEditor({
         matWidth,
         matColor: matWidth === "none" ? "none" : matColor,
         cornerAccent,
+        estimatedDpi: dpiInfo?.dpi ?? null,
         textCount: nonEmptyTexts.length,
         texts: nonEmptyTexts.join(" | "),
         printWidthPx: printW,
@@ -778,6 +1101,9 @@ export function FramePhotoEditor({
         originalFilename.replace(/\.[^.]+$/, "") || "framed-photo";
       const formData = new FormData();
       formData.append("photo", blob, `${baseName}-print-ready.jpg`);
+      if (primaryFile) {
+        formData.append("original_photo", primaryFile, primaryFile.name);
+      }
       formData.append("edit_settings", JSON.stringify(editSettings));
 
       const response = await fetch(
@@ -804,8 +1130,8 @@ export function FramePhotoEditor({
 
       const summaryParts = [
         orientation === "portrait" ? "Portrait" : "Landscape",
+        collageLayout !== "single" ? `${collageLayout} collage` : "Single",
         matWidth === "none" ? "No Mat" : `${matWidth} mat`,
-        `${Math.round(zoom * 100)}% zoom`,
       ];
       if (preset !== "original") summaryParts.push(preset.toUpperCase());
       if (nonEmptyTexts.length > 0) {
@@ -821,7 +1147,7 @@ export function FramePhotoEditor({
         editSummary: summaryParts.join(" · "),
       });
       setSuccessMsg(
-        `Edited photo uploaded & added to cart (${quantity} × ${variantLabel}).`
+        `Print-ready & original photo uploaded and added to cart (${quantity} × ${variantLabel}).`
       );
     } catch {
       setErrorMsg("Failed to upload edited photo. Please try again.");
@@ -829,6 +1155,8 @@ export function FramePhotoEditor({
       setUploading(false);
     }
   };
+
+  const requiredSlots = COLLAGE_SLOTS[collageLayout];
 
   return (
     <section
@@ -846,8 +1174,8 @@ export function FramePhotoEditor({
             Upload &amp; Edit Your Photo for {variantLabel}
           </h2>
           <p className="text-xs text-slate-400">
-            Crop, rotate, flip, add custom text captions, apply studio filters,
-            vignette, and mat borders before sending to our workshop.
+            Single or multi-photo collage, custom text, filters, DPI print
+            check, and live room-wall scale preview.
           </p>
         </div>
 
@@ -858,29 +1186,82 @@ export function FramePhotoEditor({
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) handleFileSelected(f);
+            if (f) handleFileForSlot(f, slotInputIdxRef.current);
+            e.target.value = "";
           }}
         />
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           {loadedImage && (
-            <button
-              type="button"
-              onClick={resetAllEdits}
-              className="px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
-            >
-              Reset All
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={historyIdx <= 0}
+                title="Undo"
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-35 text-slate-200 transition-colors"
+              >
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={historyIdx >= history.length - 1}
+                title="Redo"
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-35 text-slate-200 transition-colors"
+              >
+                <Redo2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWallPreview((w) => !w)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs border transition-colors ${
+                  wallPreview
+                    ? "bg-[#C69A48] text-black border-[#C69A48] font-semibold"
+                    : "bg-slate-800 text-slate-200 border-slate-700 hover:border-[#C69A48]"
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                {wallPreview ? "Back to Editor" : "Wall Scale"}
+              </button>
+              <button
+                type="button"
+                onClick={resetAllEdits}
+                className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+              >
+                Reset
+              </button>
+            </>
           )}
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#C69A48]/20 hover:bg-[#C69A48]/30 border border-[#C69A48]/50 text-[#E3C27B] font-semibold text-xs transition-colors"
+            onClick={() => triggerSlotUpload(0)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#C69A48]/20 hover:bg-[#C69A48]/30 border border-[#C69A48]/50 text-[#E3C27B] font-semibold text-xs transition-colors"
           >
             <ImagePlus className="w-4 h-4" />
-            {loadedImage ? "Change Photo" : "Upload Your Photo"}
+            {loadedImage ? "Change Photo" : "Upload Photo"}
           </button>
         </div>
       </div>
+
+      {/* Print DPI Quality Badge */}
+      {dpiInfo && (
+        <div
+          className={`px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-2 border ${
+            dpiInfo.level === "excellent"
+              ? "bg-emerald-950/50 border-emerald-800 text-emerald-300"
+              : dpiInfo.level === "good"
+              ? "bg-blue-950/50 border-blue-800 text-blue-300"
+              : "bg-amber-950/50 border-amber-700 text-amber-300"
+          }`}
+        >
+          {dpiInfo.level === "low" ? (
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          )}
+          <span>{dpiInfo.label}</span>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="p-3 rounded-lg bg-red-950/60 border border-red-800 text-xs text-red-300 flex items-center gap-2">
@@ -910,9 +1291,9 @@ export function FramePhotoEditor({
           onDrop={(e) => {
             e.preventDefault();
             const f = e.dataTransfer.files?.[0];
-            if (f) handleFileSelected(f);
+            if (f) handleFileForSlot(f, 0);
           }}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => triggerSlotUpload(0)}
           className="cursor-pointer rounded-xl border-2 border-dashed border-slate-700 hover:border-[#C69A48] bg-[#071421] p-10 text-center space-y-3 transition-colors"
         >
           <div className="w-14 h-14 rounded-2xl bg-[#C69A48]/15 border border-[#C69A48]/30 mx-auto flex items-center justify-center text-[#E3C27B]">
@@ -923,8 +1304,8 @@ export function FramePhotoEditor({
               Click or drag &amp; drop your photo here
             </p>
             <p className="text-xs text-slate-400 mt-1">
-              Supports JPG, PNG, or WebP (up to 15 MB). Crop, add text, apply
-              filters &amp; mats right here.
+              Supports JPG, PNG, or WebP (up to 15 MB). Includes collage grids,
+              custom text, DPI check &amp; room preview.
             </p>
           </div>
         </div>
@@ -938,21 +1319,42 @@ export function FramePhotoEditor({
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
-              className="max-w-full max-h-[450px] rounded shadow-2xl cursor-grab active:cursor-grabbing touch-none"
+              className={`max-w-full max-h-[450px] rounded shadow-2xl touch-none ${
+                wallPreview ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+              }`}
             />
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5 text-center">
               <Move className="w-3.5 h-3.5 text-[#C69A48] shrink-0" />
-              Drag photo to pan · Click &amp; drag any text directly to
-              reposition ·{" "}
-              <span className="text-slate-300 font-medium">
-                {originalFilename}
-              </span>
+              {wallPreview
+                ? `Showing true scale (${physW} × ${physH}") above a standard 60" living room console.`
+                : `Drag photo to pan · Drag any text directly to reposition · ${originalFilename}`}
             </p>
+
+            {/* Collage Slot Uploaders when Multi-Photo Collage is selected */}
+            {requiredSlots > 1 && (
+              <div className="w-full pt-3 border-t border-slate-800 flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                {Array.from({ length: requiredSlots }).map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => triggerSlotUpload(idx)}
+                    className={`px-3 py-1.5 rounded-lg border transition-colors ${
+                      slotImages[idx]
+                        ? "bg-emerald-950/50 border-emerald-700 text-emerald-300"
+                        : "bg-slate-900 border-slate-700 text-slate-300 hover:border-[#C69A48]"
+                    }`}
+                  >
+                    {slotImages[idx]
+                      ? `Photo #${idx + 1} ✓ (Replace)`
+                      : `+ Upload Photo #${idx + 1}`}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Studio Tool Tabs & Controls */}
           <div className="lg:col-span-5 space-y-4 text-xs">
-            {/* Tab Bar */}
             <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-[#060e1a] border border-slate-800">
               {(
                 [
@@ -965,7 +1367,10 @@ export function FramePhotoEditor({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setWallPreview(false);
+                  }}
                   className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 text-[11px] transition-colors ${
                     activeTab === tab.id
                       ? "bg-[#C69A48] text-black font-semibold"
@@ -983,15 +1388,51 @@ export function FramePhotoEditor({
               ))}
             </div>
 
-            {/* TAB 1: CROP & TRANSFORM */}
+            {/* TAB 1: CROP, COLLAGE & TRANSFORM */}
             {activeTab === "crop" && (
               <div className="p-4 rounded-xl bg-[#0b1726] border border-slate-800 space-y-4">
+                {/* Collage Layout Selector */}
+                <div>
+                  <span className="text-slate-400 flex items-center gap-1.5 mb-2">
+                    <Grid2X2 className="w-3.5 h-3.5 text-[#C69A48]" /> Layout
+                  </span>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(
+                      [
+                        { id: "single", label: "Single" },
+                        { id: "dual", label: "2-Photo" },
+                        { id: "triple", label: "3-Photo" },
+                        { id: "quad", label: "4-Grid" },
+                      ] as const
+                    ).map((cl) => (
+                      <button
+                        key={cl.id}
+                        type="button"
+                        onClick={() => {
+                          pushHistory();
+                          setCollageLayout(cl.id);
+                        }}
+                        className={`py-1.5 rounded-lg border text-[11px] ${
+                          collageLayout === cl.id
+                            ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
+                            : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {cl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   {(["portrait", "landscape"] as const).map((o) => (
                     <button
                       key={o}
                       type="button"
-                      onClick={() => setOrientation(o)}
+                      onClick={() => {
+                        pushHistory();
+                        setOrientation(o);
+                      }}
                       className={`py-2 rounded-lg capitalize border transition-colors ${
                         orientation === o
                           ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
@@ -1003,51 +1444,63 @@ export function FramePhotoEditor({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      { id: "cover", label: "Fill Frame" },
-                      { id: "contain", label: "Fit Full Photo" },
-                    ] as const
-                  ).map((fm) => (
-                    <button
-                      key={fm.id}
-                      type="button"
-                      onClick={() => {
-                        setFitMode(fm.id);
-                        setZoom(1);
-                        setPanX(0);
-                        setPanY(0);
-                      }}
-                      className={`py-1.5 rounded-lg border text-[11px] transition-colors ${
-                        fitMode === fm.id
-                          ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
-                          : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      {fm.label}
-                    </button>
-                  ))}
-                </div>
+                {collageLayout === "single" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        { id: "cover", label: "Fill Frame" },
+                        { id: "contain", label: "Fit Full Photo" },
+                      ] as const
+                    ).map((fm) => (
+                      <button
+                        key={fm.id}
+                        type="button"
+                        onClick={() => {
+                          pushHistory();
+                          setFitMode(fm.id);
+                          setZoom(1);
+                          setPanX(0);
+                          setPanY(0);
+                        }}
+                        className={`py-1.5 rounded-lg border text-[11px] ${
+                          fitMode === fm.id
+                            ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
+                            : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {fm.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setRotation90((r) => (r - 90 + 360) % 360)}
+                    onClick={() => {
+                      pushHistory();
+                      setRotation90((r) => (r - 90 + 360) % 360);
+                    }}
                     className="py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 inline-flex items-center justify-center gap-1.5"
                   >
                     <RotateCcw className="w-3.5 h-3.5" /> Rotate Left
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRotation90((r) => (r + 90) % 360)}
+                    onClick={() => {
+                      pushHistory();
+                      setRotation90((r) => (r + 90) % 360);
+                    }}
                     className="py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 inline-flex items-center justify-center gap-1.5"
                   >
                     <RotateCw className="w-3.5 h-3.5" /> Rotate Right
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFlipH((v) => !v)}
+                    onClick={() => {
+                      pushHistory();
+                      setFlipH((v) => !v);
+                    }}
                     className={`py-1.5 rounded-lg border inline-flex items-center justify-center gap-1.5 ${
                       flipH
                         ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B]"
@@ -1058,7 +1511,10 @@ export function FramePhotoEditor({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFlipV((v) => !v)}
+                    onClick={() => {
+                      pushHistory();
+                      setFlipV((v) => !v);
+                    }}
                     className={`py-1.5 rounded-lg border inline-flex items-center justify-center gap-1.5 ${
                       flipV
                         ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B]"
@@ -1084,6 +1540,7 @@ export function FramePhotoEditor({
                     max={3}
                     step={0.05}
                     value={zoom}
+                    onMouseDown={pushHistory}
                     onChange={(e) => setZoom(parseFloat(e.target.value))}
                     className="w-full accent-[#C69A48]"
                   />
@@ -1105,23 +1562,13 @@ export function FramePhotoEditor({
                     max={45}
                     step={1}
                     value={straighten}
+                    onMouseDown={pushHistory}
                     onChange={(e) =>
                       setStraighten(parseInt(e.target.value, 10))
                     }
                     className="w-full accent-[#C69A48]"
                   />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPanX(0);
-                    setPanY(0);
-                  }}
-                  className="w-full py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 text-[11px]"
-                >
-                  Center Photo Position
-                </button>
               </div>
             )}
 
@@ -1137,8 +1584,11 @@ export function FramePhotoEditor({
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => setPreset(p.id)}
-                        className={`py-1.5 rounded-md border text-[11px] transition-colors ${
+                        onClick={() => {
+                          pushHistory();
+                          setPreset(p.id);
+                        }}
+                        className={`py-1.5 rounded-md border text-[11px] ${
                           preset === p.id
                             ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
                             : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
@@ -1157,7 +1607,6 @@ export function FramePhotoEditor({
                     set: setBrightness,
                     min: 50,
                     max: 150,
-                    unit: "%",
                   },
                   {
                     label: "Contrast",
@@ -1165,7 +1614,6 @@ export function FramePhotoEditor({
                     set: setContrast,
                     min: 50,
                     max: 150,
-                    unit: "%",
                   },
                   {
                     label: "Saturation",
@@ -1173,7 +1621,6 @@ export function FramePhotoEditor({
                     set: setSaturation,
                     min: 0,
                     max: 200,
-                    unit: "%",
                   },
                   {
                     label: "Warmth / Sepia",
@@ -1181,7 +1628,6 @@ export function FramePhotoEditor({
                     set: setSepia,
                     min: 0,
                     max: 100,
-                    unit: "%",
                   },
                   {
                     label: "Studio Vignette",
@@ -1189,15 +1635,13 @@ export function FramePhotoEditor({
                     set: setVignette,
                     min: 0,
                     max: 80,
-                    unit: "%",
                   },
                 ].map((ctrl) => (
                   <div key={ctrl.label} className="space-y-1">
                     <div className="flex justify-between text-slate-300">
                       <span>{ctrl.label}</span>
                       <span className="font-mono text-slate-400">
-                        {ctrl.val}
-                        {ctrl.unit}
+                        {ctrl.val}%
                       </span>
                     </div>
                     <input
@@ -1206,6 +1650,7 @@ export function FramePhotoEditor({
                       max={ctrl.max}
                       step={2}
                       value={ctrl.val}
+                      onMouseDown={pushHistory}
                       onChange={(e) => ctrl.set(parseInt(e.target.value, 10))}
                       className="w-full accent-[#C69A48]"
                     />
@@ -1230,7 +1675,6 @@ export function FramePhotoEditor({
                   </button>
                 </div>
 
-                {/* Quick Caption Templates */}
                 <div className="flex flex-wrap gap-1.5">
                   {QUICK_CAPTIONS.map((cap) => (
                     <button
@@ -1244,7 +1688,6 @@ export function FramePhotoEditor({
                   ))}
                 </div>
 
-                {/* Layer Selector Pills */}
                 {textLayers.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800">
                     {textLayers.map((t, idx) => (
@@ -1276,7 +1719,6 @@ export function FramePhotoEditor({
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-[#C69A48]"
                     />
 
-                    {/* Font & Style Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <select
                         value={selectedText.fontFamily}
@@ -1298,7 +1740,6 @@ export function FramePhotoEditor({
                           onClick={() =>
                             updateSelectedText({ bold: !selectedText.bold })
                           }
-                          title="Bold"
                           className={`flex-1 py-2 rounded-lg border flex justify-center ${
                             selectedText.bold
                               ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B]"
@@ -1312,7 +1753,6 @@ export function FramePhotoEditor({
                           onClick={() =>
                             updateSelectedText({ italic: !selectedText.italic })
                           }
-                          title="Italic"
                           className={`flex-1 py-2 rounded-lg border flex justify-center ${
                             selectedText.italic
                               ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B]"
@@ -1350,7 +1790,6 @@ export function FramePhotoEditor({
                       </div>
                     </div>
 
-                    {/* Text Color */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-slate-400">Color:</span>
                       {TEXT_SWATCHES.map((hex) => (
@@ -1378,7 +1817,6 @@ export function FramePhotoEditor({
                       />
                     </div>
 
-                    {/* Size, Rotation & Opacity */}
                     <div className="space-y-2">
                       <div>
                         <div className="flex justify-between text-slate-400">
@@ -1445,7 +1883,6 @@ export function FramePhotoEditor({
                       </div>
                     </div>
 
-                    {/* Quick Placement & Layer Actions */}
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <div className="flex items-center gap-1">
                         <button
@@ -1475,7 +1912,6 @@ export function FramePhotoEditor({
                         <button
                           type="button"
                           onClick={duplicateSelectedText}
-                          title="Duplicate text"
                           className="p-1.5 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-white"
                         >
                           <Copy className="w-3.5 h-3.5" />
@@ -1483,7 +1919,6 @@ export function FramePhotoEditor({
                         <button
                           type="button"
                           onClick={() => deleteTextLayer(selectedText.id)}
-                          title="Delete text"
                           className="p-1.5 rounded bg-red-950/60 border border-red-800 text-red-400 hover:text-red-300"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1512,7 +1947,10 @@ export function FramePhotoEditor({
                       <button
                         key={w}
                         type="button"
-                        onClick={() => setMatWidth(w)}
+                        onClick={() => {
+                          pushHistory();
+                          setMatWidth(w);
+                        }}
                         className={`py-1.5 rounded-lg border capitalize text-[11px] ${
                           matWidth === w
                             ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
@@ -1535,7 +1973,10 @@ export function FramePhotoEditor({
                         <button
                           key={m.label}
                           type="button"
-                          onClick={() => setMatColor(m.color)}
+                          onClick={() => {
+                            pushHistory();
+                            setMatColor(m.color);
+                          }}
                           className={`px-2.5 py-1 rounded-md border text-[11px] flex items-center gap-1.5 ${
                             matColor === m.color
                               ? "border-[#C69A48] text-[#E3C27B] bg-[#C69A48]/15"
@@ -1585,7 +2026,10 @@ export function FramePhotoEditor({
                       <button
                         key={ac.id}
                         type="button"
-                        onClick={() => setCornerAccent(ac.id)}
+                        onClick={() => {
+                          pushHistory();
+                          setCornerAccent(ac.id);
+                        }}
                         className={`py-1.5 rounded-lg border text-[11px] ${
                           cornerAccent === ac.id
                             ? "bg-[#C69A48]/20 border-[#C69A48] text-[#E3C27B] font-semibold"
@@ -1640,7 +2084,7 @@ export function FramePhotoEditor({
               {uploading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Uploading Print-Ready Photo…
+                  Uploading Print-Ready &amp; Original Photo…
                 </>
               ) : (
                 <>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
 import {
   Calendar,
+  CheckCircle2,
   CircleDollarSign,
   Filter,
   Globe,
@@ -13,6 +14,7 @@ import {
   LogOut,
   Plus,
   Receipt,
+  RefreshCw,
   Search,
   Store,
 } from "lucide-react";
@@ -94,6 +96,35 @@ export default function BillingDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [reconMsg, setReconMsg] = useState<string | null>(null);
+  const [reconBusy, setReconBusy] = useState(false);
+
+  const handleRunReconciliation = async (repair = false) => {
+    setReconBusy(true);
+    setReconMsg(null);
+    try {
+      const res = await apiClient<{
+        checked_records: number;
+        consistent_records: number;
+        mismatched_records: number;
+        repaired_records: number;
+      }>(repair ? "billing/reconciliation/repair" : "billing/reconciliation", {
+        method: repair ? "POST" : "GET",
+      });
+      if (res.data) {
+        const d = res.data;
+        setReconMsg(
+          d.mismatched_records === 0
+            ? `Ledger verified: ${d.consistent_records}/${d.checked_records} records consistent.`
+            : repair
+            ? `Repaired ${d.repaired_records} mismatched record(s) from immutable ledger.`
+            : `Detected ${d.mismatched_records} mismatch(es) out of ${d.checked_records} records.`
+        );
+      }
+    } finally {
+      setReconBusy(false);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -191,6 +222,15 @@ export default function BillingDashboardPage() {
               Enquiries
             </Link>
           </nav>
+          <button
+            type="button"
+            disabled={reconBusy}
+            onClick={() => handleRunReconciliation(false)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#E3C27B] ${reconBusy ? "animate-spin" : ""}`} />
+            Reconcile
+          </button>
           <Link
             href="/billing/offline-sales/new"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C69A48] hover:bg-[#b58a3a] text-black font-semibold text-xs transition-colors"
@@ -209,6 +249,24 @@ export default function BillingDashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+        {reconMsg && (
+          <div className="rounded-xl bg-emerald-950/50 border border-emerald-800 px-4 py-3 text-xs text-emerald-300 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              {reconMsg}
+            </span>
+            {reconMsg.includes("Detected") && (
+              <button
+                type="button"
+                onClick={() => handleRunReconciliation(true)}
+                className="px-3 py-1 rounded bg-[#C69A48] text-black font-semibold"
+              >
+                Repair Now
+              </button>
+            )}
+          </div>
+        )}
+
         {error && (
           <div className="rounded-xl bg-red-950/70 border border-red-800 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <p className="text-sm text-red-300">{error}</p>

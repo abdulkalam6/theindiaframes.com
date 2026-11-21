@@ -98,6 +98,21 @@ async def get_product(
 
 
 # --- OWNER/ADMIN CATALOGUE ENDPOINTS ---
+@router.get("/admin/products")
+async def list_admin_products(
+    category_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+    owner: UserResponse = Depends(require_owner),
+    service: CatalogueService = Depends(get_catalogue_service),
+):
+    """Owner-only full product & variant listing including retail + wholesale prices."""
+    products = await service.list_products(
+        category_id=category_id, role="owner", limit=limit, skip=skip
+    )
+    return SuccessResponse(data=products)
+
+
 @router.post("/admin/categories", response_model=SuccessResponse[CategoryResponse])
 async def create_category(
     payload: CategoryCreate,

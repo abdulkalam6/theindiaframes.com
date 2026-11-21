@@ -114,3 +114,19 @@ async def list_customers(
     """List registered customers with wholesale status."""
     results = await service.list_customers(limit=limit, skip=skip)
     return SuccessResponse(data=results)
+
+
+@router.get("/audit-logs", response_model=SuccessResponse[List[dict]])
+async def list_audit_logs(
+    entity_type: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+    owner: UserResponse = Depends(require_owner),
+    service: AdminService = Depends(get_admin_service),
+):
+    """List recent owner audit log events."""
+    results = await service.list_audit_logs(
+        entity_type=entity_type, action=action, limit=limit, skip=skip
+    )
+    return SuccessResponse(data=results)

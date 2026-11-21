@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { ArrowLeft, Lock, Mail, User, ShieldAlert } from "lucide-react";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,8 +38,8 @@ export default function RegisterPage() {
       } else {
         setSuccess(true);
         setTimeout(() => {
-          window.location.href = "/login";
-        }, 1500);
+          router.push("/login");
+        }, 1200);
       }
     } catch {
       setErrorMsg("Failed to connect to registration service.");
@@ -166,6 +169,13 @@ export default function RegisterPage() {
             {loading ? "Creating Account..." : "Create Account"}
           </button>
         </form>
+
+        <GoogleSignInButton
+          onSuccess={(acctType) =>
+            router.push(acctType === "owner" ? "/admin" : "/account")
+          }
+          onError={(msg) => setErrorMsg(msg)}
+        />
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-400">
           Already registered?{" "}

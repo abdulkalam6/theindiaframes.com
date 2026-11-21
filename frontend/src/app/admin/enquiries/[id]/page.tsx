@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { API_BASE_URL, apiClient } from "@/lib/api";
-import { ArrowLeft, Download, Image as ImageIcon, LogOut } from "lucide-react";
+import { AdminNav } from "@/components/AdminNav";
+import { ArrowLeft, Download, Image as ImageIcon, Printer } from "lucide-react";
 
 interface CustomPhotoSnapshot {
   asset_id: string;
   original_filename: string;
   mime_type: string;
   size_bytes: number;
+  has_original?: boolean;
   edit_settings?: Record<string, string | number | boolean | null>;
 }
 
@@ -98,7 +100,6 @@ function formatDateTime(iso: string): string {
 
 function AdminEnquiryDetailContent() {
   const params = useParams();
-  const router = useRouter();
   const enquiryId = params.id as string;
 
   const [enquiry, setEnquiry] = useState<EnquiryDetail | null>(null);
@@ -209,63 +210,29 @@ function AdminEnquiryDetailContent() {
     }
   };
 
-  const handleLogout = async () => {
-    await apiClient("auth/logout", { method: "POST" });
-    router.push("/");
-  };
-
   return (
-    <div className="min-h-screen bg-[#060e1a] text-white">
-      <header className="border-b border-slate-800 bg-[#080f1d] px-6 py-4 flex items-center justify-between">
-        <div>
-          <span className="text-xs text-[#C69A48] font-semibold uppercase tracking-widest">
-            Owner Panel
-          </span>
-          <h1 className="text-lg font-serif font-bold text-white leading-tight">
-            Enquiry Detail
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-            <Link href="/admin" className="hover:text-white transition-colors">
-              Dashboard
-            </Link>
-            <Link
-              href="/admin/enquiries"
-              className="text-[#E3C27B] font-semibold"
-            >
-              Enquiries
-            </Link>
-            <Link
-              href="/admin/customers"
-              className="hover:text-white transition-colors"
-            >
-              Customers
-            </Link>
-            <Link
-              href="/billing"
-              className="hover:text-white transition-colors"
-            >
-              Billing
-            </Link>
-          </nav>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5 text-red-400" />
-            Sign Out
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#060e1a] text-white print:bg-white print:text-black">
+      <AdminNav title="Enquiry Detail" />
 
       <main className="max-w-5xl mx-auto px-6 py-10">
-        <Link
-          href="/admin/enquiries"
-          className="inline-flex items-center gap-1.5 text-xs text-[#E3C27B] hover:text-white mb-6 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Enquiries
-        </Link>
+        <div className="flex items-center justify-between gap-4 mb-6 print:hidden">
+          <Link
+            href="/admin/enquiries"
+            className="inline-flex items-center gap-1.5 text-xs text-[#E3C27B] hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Enquiries
+          </Link>
+          {enquiry && (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-semibold transition-colors"
+            >
+              <Printer className="w-3.5 h-3.5 text-[#E3C27B]" />
+              Print Workshop Job Sheet
+            </button>
+          )}
+        </div>
 
         {loading && (
           <div className="text-center py-16 text-slate-500 text-sm">
@@ -464,15 +431,25 @@ function AdminEnquiryDetailContent() {
                               </p>
                             )}
 
-                            <div className="pt-1 flex flex-wrap gap-2">
+                            <div className="pt-1 flex flex-wrap gap-2 print:hidden">
                               <a
                                 href={downloadUrl}
                                 download={cp.original_filename}
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#C69A48] hover:bg-[#b58a3a] text-black font-semibold text-xs transition-colors"
                               >
                                 <Download className="w-3.5 h-3.5" />
-                                Download Photo
+                                Download Print-Ready
                               </a>
+                              {cp.has_original && (
+                                <a
+                                  href={`${downloadUrl}?version=original`}
+                                  download={`original-${cp.original_filename}`}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-[#E3C27B] border border-slate-700 text-xs transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Download Original
+                                </a>
+                              )}
                               <a
                                 href={previewUrl}
                                 target="_blank"

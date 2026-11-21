@@ -95,6 +95,7 @@ class EnquiryService:
                         "original_filename": photo_doc["original_filename"],
                         "mime_type": photo_doc["mime_type"],
                         "size_bytes": photo_doc["size_bytes"],
+                        "has_original": bool(photo_doc.get("has_original", False)),
                         "edit_settings": photo_doc.get("edit_settings", {}),
                     }
 
@@ -146,7 +147,8 @@ class EnquiryService:
         created = await self.enquiry_repo.create_enquiry(enquiry_doc)
 
         # 7. Generate WhatsApp click-to-chat URL for user manual send
-        whatsapp_url = self._build_whatsapp_url(created)
+        wa_num = await self._get_business_whatsapp()
+        whatsapp_url = self._build_whatsapp_url(created, whatsapp_number=wa_num)
         return EnquiryResponse(**created, whatsapp_url=whatsapp_url)
 
     async def get_enquiry_by_id(self, enquiry_id: str, user_id: str, is_owner: bool = False) -> EnquiryResponse:
@@ -155,14 +157,25 @@ class EnquiryService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enquiry not found.")
         if not is_owner and doc["customer_id"] != user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
-        whatsapp_url = self._build_whatsapp_url(doc)
+        wa_num = await self._get_business_whatsapp()
+        whatsapp_url = self._build_whatsapp_url(doc, whatsapp_number=wa_num)
         return EnquiryResponse(**doc, whatsapp_url=whatsapp_url)
 
     async def list_customer_enquiries(self, user_id: str) -> list[EnquiryResponse]:
         docs = await self.enquiry_repo.list_by_customer(user_id)
-        return [EnquiryResponse(**d, whatsapp_url=self._build_whatsapp_url(d)) for d in docs]
+        wa_num = await self._get_business_whatsapp()
+        return [
+            EnquiryResponse(**d, whatsapp_url=self._build_whatsapp_url(d, whatsapp_number=wa_num))
+            for d in docs
+        ]
 
-    def _build_whatsapp_url(self, doc: dict) -> str:
+    async def _get_business_whatsapp(self) -> str:
+        doc = await self.db.settings.find_one({"_id": "business_settings"})
+        if doc and doc.get("whatsapp_number"):
+            return str(doc["whatsapp_number"])
+        return DEFAULT_BUSINESS_WHATSAPP
+
+    def _build_whatsapp_url(self, doc: dict, whatsapp_number: str = DEFAULT_BUSINESS_WHATSAPP) -> str:
         """Constructs click-to-chat URL with pre-filled message text."""
         items_summary = "\n".join(
             [
@@ -184,4 +197,4 @@ class EnquiryService:
         )
 
         encoded_msg = urllib.parse.quote(msg)
-        return f"https://wa.me/{DEFAULT_BUSINESS_WHATSAPP}?text={encoded_msg}"
+        return f"https://wa.me/{whatsapp_number}?text={encoded_msg}"

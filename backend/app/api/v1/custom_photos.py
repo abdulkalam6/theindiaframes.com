@@ -74,14 +74,15 @@ def _safe_filename(name: Optional[str], fallback_ext: str) -> str:
 )
 async def upload_custom_photo(
     photo: UploadFile = File(...),
+    original_photo: Optional[UploadFile] = File(None),
     edit_settings: Optional[str] = Form(None),
     tif_session: Optional[str] = Cookie(None),
     db: Optional[AsyncDatabase] = Depends(get_db),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """
-    Upload a customer-edited photo for framing before adding to cart.
-    Stored privately on disk; linked immutably to the enquiry upon submission.
+    Upload a customer-edited photo for framing before adding to cart, plus an optional
+    untouched original photo pair for owner workshop adjustments.
     """
     if db is None:
         raise HTTPException(
@@ -135,14 +136,30 @@ async def upload_custom_photo(
     file_path = UPLOAD_ROOT / stored_filename
     file_path.write_bytes(raw_bytes)
 
+    # Optionally save untouched original photo pair if provided and valid
+    original_stored_filename: Optional[str] = None
+    original_mime: Optional[str] = None
+    if original_photo is not None:
+        orig_bytes = await original_photo.read(MAX_PHOTO_BYTES + 1)
+        if orig_bytes and len(orig_bytes) <= MAX_PHOTO_BYTES:
+            orig_detected = _detect_image_mime(orig_bytes)
+            if orig_detected and orig_detected in ALLOWED_MIME_EXT:
+                orig_ext = ALLOWED_MIME_EXT[orig_detected]
+                original_stored_filename = f"{asset_id}-original.{orig_ext}"
+                original_mime = orig_detected
+                (UPLOAD_ROOT / original_stored_filename).write_bytes(orig_bytes)
+
     now = datetime.now(timezone.utc)
     await db.custom_photos.insert_one(
         {
             "asset_id": asset_id,
             "stored_filename": stored_filename,
+            "original_stored_filename": original_stored_filename,
+            "original_mime_type": original_mime,
             "original_filename": original_filename,
             "mime_type": detected_mime,
             "size_bytes": len(raw_bytes),
+            "has_original": bool(original_stored_filename),
             "edit_settings": parsed_settings,
             "uploaded_by_user_id": uploaded_by_user_id,
             "created_at": now,
@@ -155,6 +172,7 @@ async def upload_custom_photo(
             original_filename=original_filename,
             mime_type=detected_mime,
             size_bytes=len(raw_bytes),
+            has_original=bool(original_stored_filename),
             edit_settings=parsed_settings,
         )
     )
@@ -165,6 +183,7 @@ async def _serve_enquiry_photo(
     enquiry_id: str,
     asset_id: str,
     inline: bool,
+    version: str,
     requester_user_id: str,
     is_owner: bool,
 ) -> FileResponse:
@@ -203,7 +222,18 @@ async def _serve_enquiry_photo(
             detail="Custom photo file metadata not found.",
         )
 
-    stored_name = os.path.basename(photo_doc["stored_filename"])
+    use_original = version == "original" and photo_doc.get("original_stored_filename")
+    raw_stored = (
+        photo_doc["original_stored_filename"]
+        if use_original
+        else photo_doc["stored_filename"]
+    )
+    media_type = (
+        photo_doc.get("original_mime_type") or photo_doc["mime_type"]
+        if use_original
+        else photo_doc["mime_type"]
+    )
+    stored_name = os.path.basename(raw_stored)
     file_path = UPLOAD_ROOT / stored_name
     if not file_path.is_file():
         raise HTTPException(
@@ -211,16 +241,17 @@ async def _serve_enquiry_photo(
             detail="Stored photo file is missing.",
         )
 
-    ext = ALLOWED_MIME_EXT.get(photo_doc["mime_type"], "jpg")
+    ext = ALLOWED_MIME_EXT.get(media_type, "jpg")
+    suffix_tag = "original-" if use_original else ""
     download_name = _safe_filename(
-        f"{enquiry['enquiry_id']}-{matched_item.get('sku', 'frame')}-{photo_doc['original_filename']}",
+        f"{enquiry['enquiry_id']}-{matched_item.get('sku', 'frame')}-{suffix_tag}{photo_doc['original_filename']}",
         ext,
     )
     disposition = "inline" if inline else "attachment"
 
     return FileResponse(
         path=str(file_path),
-        media_type=photo_doc["mime_type"],
+        media_type=media_type,
         headers={
             "Content-Disposition": f'{disposition}; filename="{download_name}"',
             "Cache-Control": "private, max-age=300",
@@ -233,10 +264,11 @@ async def owner_download_enquiry_photo(
     enquiry_id: str,
     asset_id: str,
     inline: bool = Query(False),
+    version: str = Query("edited"),
     owner: UserResponse = Depends(require_owner),
     db: Optional[AsyncDatabase] = Depends(get_db),
 ):
-    """Owner-only preview/download of a customer's edited print-ready photo."""
+    """Owner-only preview/download of a customer's edited or original photo."""
     if db is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -247,6 +279,7 @@ async def owner_download_enquiry_photo(
         enquiry_id=enquiry_id,
         asset_id=asset_id,
         inline=inline,
+        version=version,
         requester_user_id=owner.id,
         is_owner=True,
     )
@@ -257,6 +290,7 @@ async def customer_download_enquiry_photo(
     enquiry_id: str,
     asset_id: str,
     inline: bool = Query(False),
+    version: str = Query("edited"),
     current_user: UserResponse = Depends(get_current_user),
     db: Optional[AsyncDatabase] = Depends(get_db),
 ):
@@ -271,6 +305,7 @@ async def customer_download_enquiry_photo(
         enquiry_id=enquiry_id,
         asset_id=asset_id,
         inline=inline,
+        version=version,
         requester_user_id=current_user.id,
         is_owner=current_user.account_type == "owner",
     )

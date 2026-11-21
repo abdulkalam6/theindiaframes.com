@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiClient } from "@/lib/api";
+import { API_BASE_URL, apiClient } from "@/lib/api";
 import { AdminNav } from "@/components/AdminNav";
-import { Check, Plus, Save, ShieldAlert } from "lucide-react";
+import { Check, ImagePlus, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+
+interface MediaAsset {
+  asset_id?: string | null;
+  url: string;
+  alt?: string | null;
+}
 
 interface Category {
   id: string;
@@ -18,6 +24,7 @@ interface AdminVariant {
   retail_price_paise: number;
   wholesale_price_paise?: number | null;
   wholesale_moq: number;
+  gallery?: MediaAsset[];
   availability: "available" | "unavailable";
 }
 
@@ -28,6 +35,7 @@ interface AdminProduct {
   base_sku: string;
   category_id: string;
   short_description?: string | null;
+  gallery?: MediaAsset[];
   variants: AdminVariant[];
 }
 
@@ -69,6 +77,7 @@ export default function AdminProductsPage() {
     >
   >({});
   const [savingVarId, setSavingVarId] = useState<string | null>(null);
+  const [uploadingProdId, setUploadingProdId] = useState<string | null>(null);
 
   // Add Variant per product
   const [addingVarForProd, setAddingVarForProd] = useState<string | null>(null);
@@ -174,6 +183,56 @@ export default function AdminProductsPage() {
       setProdSku("");
       setProdShortDesc("");
       setStatusBanner("Product created. Add at least one variant below.");
+      await loadData();
+    }
+  };
+
+  const handleUploadProductPhoto = async (
+    prodId: string,
+    file: File,
+    variantId?: string
+  ) => {
+    setUploadingProdId(prodId);
+    setError(null);
+    setStatusBanner(null);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      if (variantId) formData.append("variant_id", variantId);
+      const res = await fetch(
+        `${API_BASE_URL.replace(/\/$/, "")}/admin/products/${prodId}/images`,
+        {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        }
+      );
+      const json = (await res.json()) as {
+        error?: { message?: string };
+        detail?: string;
+      };
+      if (!res.ok) {
+        setError(json.error?.message || json.detail || "Image upload failed.");
+      } else {
+        setStatusBanner("Product photo uploaded and live on storefront!");
+        await loadData();
+      }
+    } catch {
+      setError("Network error while uploading image.");
+    } finally {
+      setUploadingProdId(null);
+    }
+  };
+
+  const handleDeleteProductPhoto = async (prodId: string, assetId: string) => {
+    setError(null);
+    const res = await apiClient(`admin/products/${prodId}/images/${assetId}`, {
+      method: "DELETE",
+    });
+    if (res.error) {
+      setError(res.error.message);
+    } else {
+      setStatusBanner("Product photo removed.");
       await loadData();
     }
   };
@@ -340,18 +399,68 @@ export default function AdminProductsPage() {
                       Base SKU: {prod.base_sku} · /{prod.slug}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAddingVarForProd(
-                        addingVarForProd === prod.id ? null : prod.id
-                      )
-                    }
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-[#E3C27B]"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Variant
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C69A48]/20 hover:bg-[#C69A48]/30 border border-[#C69A48]/40 text-xs text-[#E3C27B] font-semibold">
+                      <ImagePlus className="w-3.5 h-3.5" />
+                      {uploadingProdId === prod.id
+                        ? "Uploading…"
+                        : "Upload Photo"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={uploadingProdId === prod.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleUploadProductPhoto(prod.id, f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAddingVarForProd(
+                          addingVarForProd === prod.id ? null : prod.id
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-[#E3C27B]"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Variant
+                    </button>
+                  </div>
                 </div>
+
+                {/* Product Gallery Strip */}
+                {prod.gallery && prod.gallery.length > 0 && (
+                  <div className="px-5 py-3 border-b border-slate-800 bg-[#071421]/60 flex items-center gap-3 overflow-x-auto">
+                    {prod.gallery.map((g, gIdx) => (
+                      <div
+                        key={g.asset_id ?? gIdx}
+                        className="relative group shrink-0 w-20 h-16 rounded-lg overflow-hidden border border-slate-700 bg-[#060e1a]"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={g.url}
+                          alt={g.alt || prod.name}
+                          className="w-full h-full object-cover"
+                        />
+                        {g.asset_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteProductPhoto(prod.id, g.asset_id!)
+                            }
+                            title="Delete photo"
+                            className="absolute top-1 right-1 p-1 rounded bg-black/75 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {addingVarForProd === prod.id && (
                   <div className="p-4 bg-[#071421] border-b border-slate-800 grid grid-cols-2 md:grid-cols-6 gap-2 text-xs items-end">

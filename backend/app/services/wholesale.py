@@ -19,8 +19,8 @@ from app.schemas.wholesale import (
     WholesaleApplicationCreate,
     WholesaleReviewRequest,
 )
+from app.services.storage import storage_service
 
-UPLOAD_DIR = Path("backend/uploads/proofs")
 ALLOWED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -67,22 +67,21 @@ class WholesaleService:
                 detail="Proof document size must not exceed 10 MB.",
             )
 
-        # 3. Store private document securely (never accessible via public URL)
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        # 3. Store private document securely via pluggable StorageService (Local or Cloudflare R2)
         file_ext = Path(proof_file.filename or "proof.pdf").suffix or ".pdf"
         asset_id = f"proof_{uuid.uuid4().hex}{file_ext}"
-        target_path = UPLOAD_DIR / asset_id
-
-        with open(target_path, "wb") as f:
-            f.write(content)
+        storage_key = await storage_service.save_private(
+            f"proofs/{asset_id}", content, proof_file.content_type
+        )
 
         now = datetime.now(timezone.utc)
         data = payload.model_dump()
         data["user_id"] = user_id
         data["gstin"] = payload.gstin.upper().strip()
         data["proof_document"] = {
-            "provider": "private_local_storage",
+            "provider": storage_service.provider,
             "asset_id": asset_id,
+            "storage_key": storage_key,
             "original_filename": proof_file.filename or "proof.pdf",
             "mime_type": proof_file.content_type,
             "uploaded_at": now,
@@ -122,19 +121,26 @@ class WholesaleService:
         )
         return AdminWholesaleApplicationResponse(**updated)
 
-    async def get_proof_file_path(self, application_id: str) -> tuple[Path, str, str]:
-        """Owner-only file access. Returns (path, original_filename, mime_type)."""
+    async def get_proof_file_bytes(self, application_id: str) -> tuple[bytes, str, str]:
+        """Owner-only file access. Returns (bytes, original_filename, mime_type)."""
         app_doc = await self.repo.get_by_id(application_id)
         if not app_doc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found.")
-
-        proof = app_doc.get("proof_document", {})
-        asset_id = proof.get("asset_id")
-        file_path = UPLOAD_DIR / asset_id
-
-        if not file_path.exists():
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Proof file not found on server."
+                status_code=status.HTTP_404_NOT_FOUND, detail="Application not found."
             )
 
-        return file_path, proof.get("original_filename", "proof.pdf"), proof.get("mime_type", "application/pdf")
+        proof = app_doc.get("proof_document", {})
+        storage_key = proof.get("storage_key") or f"proofs/{proof.get('asset_id', '')}"
+        file_bytes = await storage_service.read_private(storage_key)
+
+        if file_bytes is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Proof file not found on server.",
+            )
+
+        return (
+            file_bytes,
+            proof.get("original_filename", "proof.pdf"),
+            proof.get("mime_type", "application/pdf"),
+        )

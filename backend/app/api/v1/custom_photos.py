@@ -10,7 +10,6 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import (
@@ -24,7 +23,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pymongo.asynchronous.database import AsyncDatabase
 
 from app.api.v1.admin import require_owner
@@ -35,6 +34,7 @@ from app.repositories.enquiry import EnquiryRepository
 from app.schemas.auth import UserResponse
 from app.schemas.enquiry import CustomPhotoUploadResponse
 from app.services.auth import AuthService
+from app.services.storage import storage_service
 
 router = APIRouter(tags=["Custom Frame Photos"])
 
@@ -44,8 +44,6 @@ ALLOWED_MIME_EXT = {
     "image/png": "png",
     "image/webp": "webp",
 }
-
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads" / "custom_photos"
 
 
 def _detect_image_mime(data: bytes) -> Optional[str]:
@@ -131,13 +129,13 @@ async def upload_custom_photo(
     asset_id = uuid.uuid4().hex
     stored_filename = f"{asset_id}.{ext}"
     original_filename = _safe_filename(photo.filename, ext)
-
-    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    file_path = UPLOAD_ROOT / stored_filename
-    file_path.write_bytes(raw_bytes)
+    storage_key = await storage_service.save_private(
+        f"custom_photos/{stored_filename}", raw_bytes, detected_mime
+    )
 
     # Optionally save untouched original photo pair if provided and valid
     original_stored_filename: Optional[str] = None
+    original_storage_key: Optional[str] = None
     original_mime: Optional[str] = None
     if original_photo is not None:
         orig_bytes = await original_photo.read(MAX_PHOTO_BYTES + 1)
@@ -147,19 +145,26 @@ async def upload_custom_photo(
                 orig_ext = ALLOWED_MIME_EXT[orig_detected]
                 original_stored_filename = f"{asset_id}-original.{orig_ext}"
                 original_mime = orig_detected
-                (UPLOAD_ROOT / original_stored_filename).write_bytes(orig_bytes)
+                original_storage_key = await storage_service.save_private(
+                    f"custom_photos/{original_stored_filename}",
+                    orig_bytes,
+                    orig_detected,
+                )
 
     now = datetime.now(timezone.utc)
     await db.custom_photos.insert_one(
         {
             "asset_id": asset_id,
             "stored_filename": stored_filename,
+            "storage_key": storage_key,
             "original_stored_filename": original_stored_filename,
+            "original_storage_key": original_storage_key,
             "original_mime_type": original_mime,
             "original_filename": original_filename,
             "mime_type": detected_mime,
             "size_bytes": len(raw_bytes),
             "has_original": bool(original_stored_filename),
+            "storage_provider": storage_service.provider,
             "edit_settings": parsed_settings,
             "uploaded_by_user_id": uploaded_by_user_id,
             "created_at": now,
@@ -186,7 +191,7 @@ async def _serve_enquiry_photo(
     version: str,
     requester_user_id: str,
     is_owner: bool,
-) -> FileResponse:
+) -> Response:
     enquiry_repo = EnquiryRepository(db)
     enquiry = await enquiry_repo.get_by_id(enquiry_id)
     if not enquiry:
@@ -222,20 +227,23 @@ async def _serve_enquiry_photo(
             detail="Custom photo file metadata not found.",
         )
 
-    use_original = version == "original" and photo_doc.get("original_stored_filename")
-    raw_stored = (
-        photo_doc["original_stored_filename"]
+    use_original = version == "original" and (
+        photo_doc.get("original_storage_key") or photo_doc.get("original_stored_filename")
+    )
+    key = (
+        photo_doc.get("original_storage_key")
+        or f"custom_photos/{os.path.basename(photo_doc['original_stored_filename'])}"
         if use_original
-        else photo_doc["stored_filename"]
+        else photo_doc.get("storage_key")
+        or f"custom_photos/{os.path.basename(photo_doc['stored_filename'])}"
     )
     media_type = (
         photo_doc.get("original_mime_type") or photo_doc["mime_type"]
         if use_original
         else photo_doc["mime_type"]
     )
-    stored_name = os.path.basename(raw_stored)
-    file_path = UPLOAD_ROOT / stored_name
-    if not file_path.is_file():
+    file_bytes = await storage_service.read_private(key)
+    if file_bytes is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Stored photo file is missing.",
@@ -249,8 +257,8 @@ async def _serve_enquiry_photo(
     )
     disposition = "inline" if inline else "attachment"
 
-    return FileResponse(
-        path=str(file_path),
+    return Response(
+        content=file_bytes,
         media_type=media_type,
         headers={
             "Content-Disposition": f'{disposition}; filename="{download_name}"',

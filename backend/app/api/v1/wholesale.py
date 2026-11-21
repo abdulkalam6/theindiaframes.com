@@ -7,7 +7,7 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pymongo.asynchronous.database import AsyncDatabase
 
 from app.api.v1.auth import get_current_user
@@ -123,9 +123,12 @@ async def download_private_proof_document(
     service: WholesaleService = Depends(get_wholesale_service),
 ):
     """Owner-only authenticated access to private customer proof document."""
-    file_path, filename, mime_type = await service.get_proof_file_path(application_id)
-    return FileResponse(
-        path=file_path,
+    file_bytes, filename, mime_type = await service.get_proof_file_bytes(application_id)
+    return Response(
+        content=file_bytes,
         media_type=mime_type,
-        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+        },
     )

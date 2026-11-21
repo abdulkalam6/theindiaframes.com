@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: str | None = None
     SITE_URL: str = "http://localhost:3000"
+    GOOGLE_CLIENT_ID: str | None = None
+
+    # Pluggable Object Storage: "local" (dev / Railway Volume) or "r2" (Cloudflare R2 free tier)
+    STORAGE_PROVIDER: str = "local"
+    LOCAL_UPLOAD_ROOT: str = "uploads"
+    PUBLIC_API_BASE_URL: str = "http://localhost:8000"
+    R2_ACCOUNT_ID: str | None = None
+    R2_ENDPOINT_URL: str | None = None
+    R2_ACCESS_KEY_ID: str | None = None
+    R2_SECRET_ACCESS_KEY: str | None = None
+    R2_PUBLIC_BUCKET: str | None = None
+    R2_PUBLIC_BASE_URL: str | None = None
+    R2_PRIVATE_BUCKET: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

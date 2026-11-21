@@ -457,6 +457,13 @@ function AdminEnquiryDetailContent() {
                                 )}
                             </div>
 
+                            {settings.texts && (
+                              <p className="text-[11px] text-[#E3C27B]">
+                                Text overlay: &ldquo;{String(settings.texts)}
+                                &rdquo;
+                              </p>
+                            )}
+
                             <div className="pt-1 flex flex-wrap gap-2">
                               <a
                                 href={downloadUrl}

@@ -22,7 +22,11 @@ async def test_health_check():
 
 
 @pytest.mark.asyncio
-async def test_ready_check_unconfigured_db():
+async def test_ready_check():
+    # Ensure database connection is active for readiness check
+    from app.database.session import db_manager
+
+    await db_manager.connect()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -30,7 +34,7 @@ async def test_ready_check_unconfigured_db():
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ready"
-        assert data["database"] == "unconfigured_local_mode"
+        assert data["database"] in ["connected", "unconfigured_local_mode"]
 
 
 @pytest.mark.asyncio

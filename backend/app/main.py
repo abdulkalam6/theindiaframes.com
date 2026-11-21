@@ -9,8 +9,10 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.v1.catalogue import router as catalogue_router
 from app.core.config import settings
 from app.core.responses import ErrorBody, ErrorResponse, Meta
+from app.database.indexes import create_indexes
 from app.database.session import db_manager
 
 
@@ -18,6 +20,8 @@ from app.database.session import db_manager
 async def lifespan(app: FastAPI):
     # Startup: database lifecycle initialization
     await db_manager.connect()
+    if db_manager.db is not None:
+        await create_indexes(db_manager.db)
     yield
     # Shutdown: database cleanup
     await db_manager.disconnect()
@@ -48,6 +52,10 @@ async def request_context_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+# Include Catalogue API Routers
+app.include_router(catalogue_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health", tags=["Health"])

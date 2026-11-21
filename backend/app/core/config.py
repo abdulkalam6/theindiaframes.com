@@ -37,7 +37,8 @@ class Settings(BaseSettings):
 
     # Database settings
     # PyMongo AsyncMongoClient URI; optional in local dev to enable decoupled testing
-    MONGODB_URI: str | None = None
+    # Local MongoDB running on port 27017 by default
+    MONGODB_URI: str | None = "mongodb://127.0.0.1:27017"
     MONGODB_DB_NAME: str = "the_india_frames"
 
     # Session & Security (placeholders for Phase 0)

@@ -250,6 +250,7 @@ async def seed_qa_dataset() -> None:
             "slug": "classic-teak-gold-trim-frame",
             "base_sku": "TIF-FRM-001",
             "short_description": "Warm teak-grain synthetic moulding with subtle gold inner bead.",
+            "image_url": "/qa-products/teak-gold-frame.svg",
             "description": (
                 "Durable moisture-resistant moulding crafted for portraits, wedding "
                 "photos, and certificates. Supplied with clear front glass and MDF back."
@@ -292,6 +293,7 @@ async def seed_qa_dataset() -> None:
             "slug": "matte-black-gallery-mdf-frame",
             "base_sku": "TIF-FRM-002",
             "short_description": "Minimalist matte black flat profile for modern gallery walls.",
+            "image_url": "/qa-products/matte-black-frame.svg",
             "description": (
                 "Clean straight-edge gallery moulding ideal for certificates, art "
                 "prints, and monochrome photography."
@@ -325,6 +327,7 @@ async def seed_qa_dataset() -> None:
             "slug": "heavy-duty-thermal-roll-laminator-350mm",
             "base_sku": "TIF-LAM-350",
             "short_description": "Dual-roller studio laminator with digital temperature control.",
+            "image_url": "/qa-products/thermal-laminator.svg",
             "description": (
                 "Engineered for high-volume photo labs and framing shops. Supports "
                 "both hot thermal films and cold pressure-sensitive rolls up to 350mm width."
@@ -358,6 +361,7 @@ async def seed_qa_dataset() -> None:
             "slug": "velvet-matte-lamination-roll-film",
             "base_sku": "TIF-FLM-VLV",
             "short_description": "Soft-touch anti-glare velvet thermal film for wedding albums & frames.",
+            "image_url": "/qa-products/velvet-roll-film.svg",
             "description": (
                 "High-clarity BOPP velvet matte film with strong EVA adhesive layer. "
                 "Eliminates harsh reflections on framed portraits."
@@ -391,6 +395,7 @@ async def seed_qa_dataset() -> None:
             "slug": "anti-glare-framing-glass-sheet-pack",
             "base_sku": "TIF-GLS-AG",
             "short_description": "Etched non-reflective 2mm framing glass cut to standard sizes.",
+            "image_url": "/qa-products/antiglare-glass.svg",
             "description": (
                 "Precision-cut 2mm non-glare float glass reducing studio glare while "
                 "keeping photographic colours crisp."
@@ -422,6 +427,15 @@ async def seed_qa_dataset() -> None:
 
     sku_lookup: dict[str, tuple[str, str]] = {}
     for p in catalogue_seed:
+        img_url = p["image_url"]
+        prod_gallery = [
+            {
+                "asset_id": f"qa-{p['slug']}",
+                "url": img_url,
+                "alt": f"{p['name']} (QA sample illustration)",
+                "sort_order": 0,
+            }
+        ]
         prod_doc = {
             "name": p["name"],
             "slug": p["slug"],
@@ -431,7 +445,7 @@ async def seed_qa_dataset() -> None:
             "category_id": cat_ids[p["category_slug"]],
             "subcategory_id": None,
             "tags": p["tags"],
-            "gallery": [],
+            "gallery": prod_gallery,
             "is_featured": p["is_featured"],
             "is_active": True,
             "seo_title": f"{p['name']} | The India Frames",
@@ -446,7 +460,14 @@ async def seed_qa_dataset() -> None:
             var_doc = {
                 **v,
                 "product_id": prod_res.inserted_id,
-                "gallery": [],
+                "gallery": [
+                    {
+                        "asset_id": f"qa-{v['sku'].lower()}",
+                        "url": img_url,
+                        "alt": f"{p['name']} - {v['label']}",
+                        "sort_order": 0,
+                    }
+                ],
                 "is_active": True,
                 "created_at": now - timedelta(days=5),
                 "updated_at": now - timedelta(days=5),

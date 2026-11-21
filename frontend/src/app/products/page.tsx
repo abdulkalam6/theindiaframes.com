@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { useCartStore } from "@/stores/cart";
@@ -38,6 +39,7 @@ interface Product {
   base_sku: string;
   short_description?: string | null;
   category_id: string;
+  gallery?: Array<{ url: string; alt?: string }>;
   is_featured: boolean;
   variants: Variant[];
 }
@@ -108,7 +110,7 @@ export default function ProductsPage() {
         sku: variant.sku,
         productName: product.name,
         variantLabel: variant.label,
-        imageUrl: variant.gallery?.[0]?.url,
+        imageUrl: variant.gallery?.[0]?.url ?? product.gallery?.[0]?.url,
         retailPricePaise: variant.retail_price_paise ?? 0,
         wholesalePricePaise: variant.wholesale_price_paise ?? undefined,
         wholesaleMoq: variant.wholesale_moq ?? 1,
@@ -216,12 +218,35 @@ export default function ProductsPage() {
               (firstAvail.retail_price_paise === undefined ||
                 firstAvail.retail_price_paise === null);
 
+            const coverImage =
+              firstAvail?.gallery?.[0] ?? product.gallery?.[0] ?? null;
+
             return (
               <div
                 key={product.id}
                 className="rounded-2xl bg-[#0b1726] border border-slate-800 hover:border-[#C69A48]/50 transition-colors p-5 flex flex-col justify-between gap-4"
               >
                 <div className="space-y-3">
+                  <Link
+                    href={`/products/${product.slug}`}
+                    className="block relative aspect-[4/3] w-full rounded-xl overflow-hidden bg-[#081524] border border-slate-800/80"
+                  >
+                    {coverImage ? (
+                      <Image
+                        src={coverImage.url}
+                        alt={coverImage.alt || product.name}
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        className="object-cover hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-1.5">
+                        <ImageIcon className="w-7 h-7 text-[#C69A48]/50" />
+                        <span className="text-[11px]">Image pending upload</span>
+                      </div>
+                    )}
+                  </Link>
+
                   <div className="flex items-start justify-between gap-2">
                     <Link
                       href={`/products/${product.slug}`}

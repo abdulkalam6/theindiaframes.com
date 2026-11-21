@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" fill="none">
+  <rect width="640" height="480" fill="#081524"/>
+  <rect x="150" y="58" width="340" height="364" rx="8" fill="#5A371E" stroke="#C69A48" stroke-width="6"/>
+  <rect x="182" y="90" width="276" height="300" rx="2" fill="#E9DEC8" stroke="#E3C27B" stroke-width="4"/>
+  <rect x="210" y="118" width="220" height="244" fill="#10253D"/>
+  <circle cx="285" cy="195" r="28" fill="#C69A48" opacity="0.85"/>
+  <path d="M210 315L278 242L334 295L372 258L430 315V362H210V315Z" fill="#1E3C5C"/>
+  <text x="320" y="452" text-anchor="middle" fill="#94A3B8" font-family="sans-serif" font-size="14" letter-spacing="2">CLASSIC TEAK GOLD-TRIM FRAME • QA SAMPLE</text>
+</svg>

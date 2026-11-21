@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { useCartStore } from "@/stores/cart";
-import { ArrowLeft, Check, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, Image as ImageIcon, ShoppingCart } from "lucide-react";
 
 interface Variant {
   id: string;
@@ -25,6 +26,7 @@ interface Product {
   base_sku: string;
   short_description?: string | null;
   description?: string | null;
+  gallery?: Array<{ url: string; alt?: string }>;
   tags: string[];
   variants: Variant[];
 }
@@ -123,7 +125,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
         sku: variant.sku,
         productName: product.name,
         variantLabel: variant.label,
-        imageUrl: variant.gallery?.[0]?.url,
+        imageUrl: variant.gallery?.[0]?.url ?? product.gallery?.[0]?.url,
         retailPricePaise: variant.retail_price_paise ?? 0,
         wholesalePricePaise: variant.wholesale_price_paise ?? undefined,
         wholesaleMoq: variant.wholesale_moq ?? 1,
@@ -133,6 +135,8 @@ export function ProductDetailClient({ slug }: { slug: string }) {
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);
   };
+
+  const heroImage = variant?.gallery?.[0] ?? product.gallery?.[0] ?? null;
 
   return (
     <div className="container mx-auto px-4 py-10 max-w-4xl space-y-8">
@@ -144,18 +148,38 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       </Link>
 
       <div className="rounded-2xl bg-[#0b1726] border border-slate-800 p-6 sm:p-8 space-y-6">
-        <div className="space-y-2">
-          <span className="text-[11px] font-mono text-slate-500">
-            SKU: {variant?.sku ?? product.base_sku}
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-white">
-            {product.name}
-          </h1>
-          {product.description && (
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              {product.description}
-            </p>
-          )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="relative aspect-[4/3] w-full rounded-xl overflow-hidden bg-[#081524] border border-slate-800">
+            {heroImage ? (
+              <Image
+                src={heroImage.url}
+                alt={heroImage.alt || product.name}
+                fill
+                sizes="(max-width: 768px) 100vw, 50vw"
+                priority
+                className="object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+                <ImageIcon className="w-10 h-10 text-[#C69A48]/50" />
+                <span className="text-xs">Product image pending upload</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <span className="text-[11px] font-mono text-slate-500">
+              SKU: {variant?.sku ?? product.base_sku}
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-white">
+              {product.name}
+            </h1>
+            {product.description && (
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                {product.description}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Variant Picker */}

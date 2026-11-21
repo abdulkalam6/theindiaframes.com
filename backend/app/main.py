@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.catalogue import router as catalogue_router
+from app.api.v1.wholesale import router as wholesale_router
 from app.core.config import settings
 from app.core.responses import ErrorBody, ErrorResponse, Meta
 from app.database.indexes import create_indexes
@@ -58,6 +59,7 @@ async def request_context_middleware(request: Request, call_next):
 # Include API Routers
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(catalogue_router, prefix=settings.API_V1_PREFIX)
+app.include_router(wholesale_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health", tags=["Health"])

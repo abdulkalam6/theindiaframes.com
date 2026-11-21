@@ -278,11 +278,11 @@ export default function CartPage() {
 
             <div className="pt-4 border-t border-slate-800 space-y-3">
               <Link
-                href="/login"
+                href="/checkout"
                 className={`w-full py-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                   serverValidation?.can_submit
                     ? "bg-[#C69A48] hover:bg-[#b58a3a] text-black shadow-lg"
-                    : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                    : "bg-slate-800 text-slate-500 cursor-not-allowed pointer-events-none"
                 }`}
               >
                 Proceed to Submit Enquiry

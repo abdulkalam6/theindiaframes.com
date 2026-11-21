@@ -36,20 +36,24 @@ async def test_cart_validation_and_pricing_tiers():
         password="Password123!",
     )
 
-    # 1. Setup Catalogue Data using an initial client session
+    # 1. Setup Catalogue Data using an authenticated owner client session
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as setup_client:
+        login_res = await setup_client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@theindiaframes.com", "password": "Password123!"},
+        )
+        assert login_res.status_code == 200
+
         cat_resp = await setup_client.post(
             "/api/v1/admin/categories",
-            headers={"x-auth-role": "owner"},
             json={"name": "Photo Frames", "slug": "photo-frames"},
         )
         cat_id = cat_resp.json()["data"]["id"]
 
         prod_resp = await setup_client.post(
             "/api/v1/admin/products",
-            headers={"x-auth-role": "owner"},
             json={
                 "name": "Teak Wood Frame",
                 "slug": "teak-wood-frame",
@@ -61,7 +65,6 @@ async def test_cart_validation_and_pricing_tiers():
 
         var_resp = await setup_client.post(
             f"/api/v1/admin/products/{prod_id}/variants",
-            headers={"x-auth-role": "owner"},
             json={
                 "sku": "TWF-01-8X12",
                 "label": "8x12 inches",

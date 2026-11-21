@@ -5,6 +5,7 @@ Tests for Phase 6 Enquiry Creation, Idempotency, Snapshots & WhatsApp Click-to-C
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.cli.provision_owner import provision_owner
 from app.database.session import db_manager
 from app.main import app
 
@@ -33,10 +34,22 @@ async def setup_test_enquiry_db():
 
 @pytest.mark.asyncio
 async def test_enquiry_creation_and_immutable_snapshots():
+    await provision_owner(
+        name="Enquiry Test Owner",
+        email="owner.enq@theindiaframes.com",
+        password="OwnerPassword123!",
+    )
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        # 1. Setup Customer & Catalogue Data
+        # 1. Setup Customer & Owner sessions
+        owner_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner.enq@theindiaframes.com", "password": "OwnerPassword123!"},
+        )
+        owner_cookies = owner_login.cookies
+
         reg_resp = await client.post(
             "/api/v1/auth/register",
             json={
@@ -58,14 +71,14 @@ async def test_enquiry_creation_and_immutable_snapshots():
         # Create Category and Product
         cat_resp = await client.post(
             "/api/v1/admin/categories",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={"name": "Glass Products", "slug": "glass-products"},
         )
         cat_id = cat_resp.json()["data"]["id"]
 
         prod_resp = await client.post(
             "/api/v1/admin/products",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={
                 "name": "Antique Glass Mirror",
                 "slug": "antique-glass-mirror",
@@ -77,7 +90,7 @@ async def test_enquiry_creation_and_immutable_snapshots():
 
         var_resp = await client.post(
             f"/api/v1/admin/products/{prod_id}/variants",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={
                 "sku": "AGM-01-SMALL",
                 "label": "Small 10x15",
@@ -131,7 +144,7 @@ async def test_enquiry_creation_and_immutable_snapshots():
         # 4. Snapshot immutability: Update live variant price -> old enquiry snapshot remains unchanged
         await client.patch(
             f"/api/v1/admin/variants/{var_id}",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={"retail_price_paise": 95000},  # Price increased to ₹950
         )
 

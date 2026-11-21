@@ -105,13 +105,11 @@ async def test_billing_authorization_and_unified_records():
         # Create catalogue item
         cat = await owner_client.post(
             "/api/v1/admin/categories",
-            headers={"x-auth-role": "owner"},
             json={"name": "Photo Frames", "slug": "photo-frames-billing"},
         )
         cat_id = cat.json()["data"]["id"]
         prod = await owner_client.post(
             "/api/v1/admin/products",
-            headers={"x-auth-role": "owner"},
             json={
                 "name": "MDF Frame",
                 "slug": "mdf-frame-billing",
@@ -122,7 +120,6 @@ async def test_billing_authorization_and_unified_records():
         prod_id = prod.json()["data"]["id"]
         var = await owner_client.post(
             f"/api/v1/admin/products/{prod_id}/variants",
-            headers={"x-auth-role": "owner"},
             json={
                 "sku": "MDF-B01-12X18",
                 "label": "12 x 18 in",
@@ -365,13 +362,11 @@ async def test_phase9_offline_sales_partial_payments_reversals_and_reconciliatio
         # Create catalogue item (retail ₹650 = 65000 paise)
         cat = await owner_client.post(
             "/api/v1/admin/categories",
-            headers={"x-auth-role": "owner"},
             json={"name": "Wood Frames", "slug": "wood-frames-p9"},
         )
         cat_id = cat.json()["data"]["id"]
         prod = await owner_client.post(
             "/api/v1/admin/products",
-            headers={"x-auth-role": "owner"},
             json={
                 "name": "Teak Frame",
                 "slug": "teak-frame-p9",
@@ -382,7 +377,6 @@ async def test_phase9_offline_sales_partial_payments_reversals_and_reconciliatio
         prod_id = prod.json()["data"]["id"]
         var = await owner_client.post(
             f"/api/v1/admin/products/{prod_id}/variants",
-            headers={"x-auth-role": "owner"},
             json={
                 "sku": "TK-01-12X18",
                 "label": "12 x 18 in",

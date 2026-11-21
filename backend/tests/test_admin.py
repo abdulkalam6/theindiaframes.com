@@ -77,14 +77,14 @@ async def test_owner_admin_enquiry_workflow():
         # 3. Create sample catalogue and customer enquiry
         cat = await client.post(
             "/api/v1/admin/categories",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={"name": "Lamination", "slug": "lamination"},
         )
         cat_id = cat.json()["data"]["id"]
 
         prod = await client.post(
             "/api/v1/admin/products",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={
                 "name": "Velvet Roll Film",
                 "slug": "velvet-roll-film",
@@ -96,7 +96,7 @@ async def test_owner_admin_enquiry_workflow():
 
         var = await client.post(
             f"/api/v1/admin/products/{prod_id}/variants",
-            headers={"x-auth-role": "owner"},
+            cookies=owner_cookies,
             json={
                 "sku": "VRF-01-ROLL",
                 "label": "25 micron 50m",

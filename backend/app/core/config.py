@@ -41,10 +41,18 @@ class Settings(BaseSettings):
     MONGODB_URI: str | None = "mongodb://127.0.0.1:27017"
     MONGODB_DB_NAME: str = "the_india_frames"
 
-    # Session & Security (placeholders for Phase 0)
+    # Session & Security
     SESSION_SECRET_KEY: str = "phase-0-development-secret-key-change-in-production"
     COOKIE_DOMAIN: str | None = None
     COOKIE_SECURE: bool = False
+
+    # Phase 10: Security, Rate Limiting & Observability
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_AUTH_MAX_REQUESTS: int = 30
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    LOG_LEVEL: str = "INFO"
+    SENTRY_DSN: str | None = None
+    SITE_URL: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

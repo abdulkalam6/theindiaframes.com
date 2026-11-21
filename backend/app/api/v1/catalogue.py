@@ -1,15 +1,20 @@
 """
 Catalogue REST API Router for public and admin operations.
 Handles Categories, Products, and Variants.
+Phase 10 Security Hardening: Role projection and owner mutations derive strictly
+from verified backend session cookies (`tif_session`) — never from client headers.
 """
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
 from pymongo.asynchronous.database import AsyncDatabase
 
+from app.api.v1.admin import require_owner
+from app.api.v1.auth import get_auth_service
 from app.core.responses import SuccessResponse
 from app.database.session import get_db
+from app.schemas.auth import UserResponse
 from app.schemas.catalogue import (
     AdminProductResponse,
     AdminVariantResponse,
@@ -20,6 +25,7 @@ from app.schemas.catalogue import (
     VariantCreate,
     VariantUpdate,
 )
+from app.services.auth import AuthService
 from app.services.catalogue import CatalogueService, UserRole
 
 router = APIRouter(tags=["Catalogue"])
@@ -34,14 +40,24 @@ def get_catalogue_service(db: Optional[AsyncDatabase] = Depends(get_db)) -> Cata
     return CatalogueService(db)
 
 
-def get_current_role(x_auth_role: Optional[str] = Header(None)) -> UserRole:
+async def get_current_role(
+    tif_session: Optional[str] = Cookie(None),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> UserRole:
     """
-    Header-driven or session-driven role projection provider.
-    In Phase 2, allows testing price projection policies before full session auth in Phase 3.
+    Authoritative session-derived price projection role.
+    Never trusts client-supplied headers or query parameters.
     """
-    if x_auth_role in ["owner", "wholesale_approved", "retail", "visitor"]:
-        return x_auth_role  # type: ignore
-    return "visitor"
+    if not tif_session:
+        return "visitor"
+    user = await auth_service.get_current_user_from_token(tif_session)
+    if not user:
+        return "visitor"
+    if user.account_type == "owner":
+        return "owner"
+    if user.wholesale_status == "approved":
+        return "wholesale_approved"
+    return "retail"
 
 
 # --- PUBLIC & SHOPPER ENDPOINTS ---
@@ -85,11 +101,9 @@ async def get_product(
 @router.post("/admin/categories", response_model=SuccessResponse[CategoryResponse])
 async def create_category(
     payload: CategoryCreate,
-    role: UserRole = Depends(get_current_role),
+    owner: UserResponse = Depends(require_owner),
     service: CatalogueService = Depends(get_catalogue_service),
 ):
-    if role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner privileges required.")
     cat = await service.create_category(payload)
     return SuccessResponse(data=cat)
 
@@ -98,11 +112,9 @@ async def create_category(
 async def update_category(
     category_id: str,
     payload: CategoryUpdate,
-    role: UserRole = Depends(get_current_role),
+    owner: UserResponse = Depends(require_owner),
     service: CatalogueService = Depends(get_catalogue_service),
 ):
-    if role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner privileges required.")
     cat = await service.update_category(category_id, payload)
     return SuccessResponse(data=cat)
 
@@ -110,24 +122,23 @@ async def update_category(
 @router.post("/admin/products", response_model=SuccessResponse[AdminProductResponse])
 async def create_product(
     payload: ProductCreate,
-    role: UserRole = Depends(get_current_role),
+    owner: UserResponse = Depends(require_owner),
     service: CatalogueService = Depends(get_catalogue_service),
 ):
-    if role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner privileges required.")
     prod = await service.create_product(payload)
     return SuccessResponse(data=prod)
 
 
-@router.post("/admin/products/{product_id}/variants", response_model=SuccessResponse[AdminVariantResponse])
+@router.post(
+    "/admin/products/{product_id}/variants",
+    response_model=SuccessResponse[AdminVariantResponse],
+)
 async def create_variant(
     product_id: str,
     payload: VariantCreate,
-    role: UserRole = Depends(get_current_role),
+    owner: UserResponse = Depends(require_owner),
     service: CatalogueService = Depends(get_catalogue_service),
 ):
-    if role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner privileges required.")
     variant = await service.create_variant(product_id, payload)
     return SuccessResponse(data=variant)
 
@@ -136,10 +147,8 @@ async def create_variant(
 async def update_variant(
     variant_id: str,
     payload: VariantUpdate,
-    role: UserRole = Depends(get_current_role),
+    owner: UserResponse = Depends(require_owner),
     service: CatalogueService = Depends(get_catalogue_service),
 ):
-    if role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner privileges required.")
     variant = await service.update_variant(variant_id, payload)
     return SuccessResponse(data=variant)

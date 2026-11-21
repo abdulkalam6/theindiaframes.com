@@ -10,9 +10,9 @@ export default function HomePage() {
       tag: "Retail & Wholesale",
     },
     {
-      title: "Frame Accessories",
-      description: "Backing boards, flexi pins, hanging hooks, glass and corner protectors.",
-      href: "/products?category=frame-accessories",
+      title: "Glass & Backing",
+      description: "Non-glare glass, clear glass, MDF backing boards, and frame hardware.",
+      href: "/products?category=glass-and-backing",
       tag: "Workshop Supplies",
     },
     {
@@ -24,7 +24,7 @@ export default function HomePage() {
     {
       title: "Lamination Films & Rolls",
       description: "Glossy, matte, velvet and crystal cold films with reliable adhesion.",
-      href: "/products?category=lamination-accessories",
+      href: "/products?category=lamination-consumables",
       tag: "Consumables",
     },
     {

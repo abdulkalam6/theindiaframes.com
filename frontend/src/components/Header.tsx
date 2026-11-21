@@ -17,9 +17,9 @@ export function Header() {
 
   const navLinks = [
     { label: "Photo Frames", href: "/products?category=photo-frames" },
-    { label: "Frame Accessories", href: "/products?category=frame-accessories" },
+    { label: "Glass & Backing", href: "/products?category=glass-and-backing" },
     { label: "Lamination Machines", href: "/products?category=lamination-machines" },
-    { label: "Lamination Accessories", href: "/products?category=lamination-accessories" },
+    { label: "Lamination Films", href: "/products?category=lamination-consumables" },
     { label: "Services", href: "/services" },
     { label: "Personalised Gifts", href: "/personalised-gifts" },
     { label: "Wholesale", href: "/wholesale" },

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api";
 import { useCartStore } from "@/stores/cart";
 import {
@@ -48,7 +49,9 @@ function formatPaise(paise: number): string {
   return `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 }
 
-export default function ProductsPage() {
+function ProductsPageContent() {
+  const searchParams = useSearchParams();
+  const categorySlugParam = searchParams.get("category");
   const addItem = useCartStore((s) => s.addItem);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -58,6 +61,14 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addedVariantId, setAddedVariantId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!categorySlugParam || categories.length === 0) return;
+    const match = categories.find((c) => c.slug === categorySlugParam);
+    if (match) {
+      setSelectedCategory(match.id);
+    }
+  }, [categorySlugParam, categories]);
 
   useEffect(() => {
     async function load() {
@@ -346,5 +357,19 @@ export default function ProductsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 py-16 text-center text-xs text-slate-400">
+          Loading catalogue…
+        </div>
+      }
+    >
+      <ProductsPageContent />
+    </Suspense>
   );
 }

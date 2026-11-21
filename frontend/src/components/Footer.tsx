@@ -35,8 +35,8 @@ export function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="/products?category=frame-accessories" className="hover:text-white transition-colors">
-                Frame Accessories
+              <Link href="/products?category=glass-and-backing" className="hover:text-white transition-colors">
+                Glass &amp; Backing
               </Link>
             </li>
             <li>
@@ -45,8 +45,8 @@ export function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="/products?category=lamination-accessories" className="hover:text-white transition-colors">
-                Lamination Accessories
+              <Link href="/products?category=lamination-consumables" className="hover:text-white transition-colors">
+                Lamination Consumables
               </Link>
             </li>
             <li>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiClient } from "@/lib/api";
+import { API_BASE_URL, apiClient } from "@/lib/api";
 import { ArrowLeft, CheckCircle2, FileUp, ShieldAlert, ShieldCheck } from "lucide-react";
 
 interface WholesaleAppStatus {
@@ -15,7 +15,6 @@ interface WholesaleAppStatus {
 
 export default function WholesalePage() {
   const [existingApp, setExistingApp] = useState<WholesaleAppStatus | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
 
   // Form State
   const [businessName, setBusinessName] = useState("");
@@ -44,8 +43,6 @@ export default function WholesalePage() {
         }
       } catch {
         // Unauthenticated or no application
-      } finally {
-        setLoadingStatus(false);
       }
     }
     checkMyApplication();
@@ -84,7 +81,7 @@ export default function WholesalePage() {
     formData.append("proof_document", proofFile);
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/wholesale/apply", {
+      const res = await fetch(`${API_BASE_URL.replace(/\/$/, "")}/wholesale/apply`, {
         method: "POST",
         body: formData,
         credentials: "include",

@@ -112,7 +112,36 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {user.wholesale_status === "not_applied" && (
+        {user.account_type === "owner" && (
+          <div className="p-5 rounded-xl bg-gradient-to-r from-[#0d1a29] to-[#071421] border border-[#C69A48]/40 flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#C69A48]" />
+                Owner Management Portals
+              </h3>
+              <p className="text-xs text-slate-400">
+                Access enquiries, customer directory, offline sales, and payment
+                records.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/admin"
+                className="px-4 py-2 rounded-lg bg-[#C69A48] hover:bg-[#b58a3a] text-black font-semibold text-xs"
+              >
+                Admin Panel
+              </Link>
+              <Link
+                href="/billing"
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs"
+              >
+                Billing Portal
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {user.account_type !== "owner" && user.wholesale_status === "not_applied" && (
           <div className="p-5 rounded-xl bg-gradient-to-r from-[#0d1a29] to-[#071421] border border-[#C69A48]/30 flex items-center justify-between">
             <div className="space-y-1">
               <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">

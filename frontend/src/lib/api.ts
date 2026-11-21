@@ -1,6 +1,7 @@
 /**
  * Central API Client configuration for The India Frames frontend.
  * Reads NEXT_PUBLIC_API_BASE_URL safely with fallback for local development.
+ * Normalizes FastAPI HTTPException `{ detail }` responses into `ApiResponse.error`.
  */
 
 const DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1";
@@ -40,6 +41,34 @@ export async function apiClient<T>(
     credentials: options.credentials ?? "include",
   });
 
-  const data = await response.json();
-  return data as ApiResponse<T>;
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = (await response.json()) as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+
+  if (!response.ok) {
+    if (parsed.error && typeof parsed.error === "object") {
+      return parsed as unknown as ApiResponse<T>;
+    }
+    const detail =
+      typeof parsed.detail === "string"
+        ? parsed.detail
+        : Array.isArray(parsed.detail) && parsed.detail.length > 0
+        ? String(
+            (parsed.detail[0] as { msg?: string })?.msg ??
+              "Validation error."
+          )
+        : response.statusText || "Request failed.";
+
+    return {
+      error: {
+        code: `HTTP_${response.status}`,
+        message: detail,
+      },
+    };
+  }
+
+  return parsed as unknown as ApiResponse<T>;
 }

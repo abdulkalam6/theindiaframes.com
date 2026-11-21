@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
 import { ArrowLeft, Lock, Mail, ShieldAlert } from "lucide-react";
 
+interface LoginResult {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    account_type: "retail" | "wholesale" | "owner";
+    wholesale_status: "not_applied" | "pending" | "approved" | "rejected";
+  };
+}
+
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -18,16 +30,18 @@ export default function LoginPage() {
     setErrorMsg("");
 
     try {
-      const res = await apiClient("auth/login", {
+      const res = await apiClient<LoginResult>("auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      if (res.error) {
-        setErrorMsg(res.error.message || "Invalid credentials.");
+      if (res.error || !res.data) {
+        setErrorMsg(res.error?.message || "Invalid email or password.");
       } else {
         setSuccess(true);
-        window.location.href = "/account";
+        const dest =
+          res.data.user.account_type === "owner" ? "/admin" : "/account";
+        router.push(dest);
       }
     } catch {
       setErrorMsg("Failed to connect to authentication service.");
@@ -47,10 +61,11 @@ export default function LoginPage() {
         </Link>
 
         <h1 className="text-2xl font-serif font-bold text-white mb-1">
-          Customer Sign In
+          Sign In
         </h1>
         <p className="text-xs text-slate-400 mb-6">
-          Sign in to submit enquiry carts and access wholesale pricing.
+          Sign in to submit enquiry carts, view wholesale pricing, or access
+          owner tools.
         </p>
 
         {errorMsg && (
@@ -62,7 +77,7 @@ export default function LoginPage() {
 
         {success && (
           <div className="mb-4 p-3 rounded-lg bg-emerald-950/60 border border-emerald-800 text-xs text-emerald-300">
-            Sign-in successful! Redirecting to account...
+            Sign-in successful! Redirecting...
           </div>
         )}
 
@@ -112,7 +127,10 @@ export default function LoginPage() {
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-400">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-[#E3C27B] hover:underline font-medium">
+          <Link
+            href="/register"
+            className="text-[#E3C27B] hover:underline font-medium"
+          >
             Create account
           </Link>
         </div>

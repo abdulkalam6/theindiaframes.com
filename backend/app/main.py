@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.billing import router as billing_router
 from app.api.v1.cart import router as cart_router
 from app.api.v1.catalogue import router as catalogue_router
 from app.api.v1.enquiry import router as enquiry_router
@@ -62,6 +63,7 @@ async def request_context_middleware(request: Request, call_next):
 # Include API Routers
 app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(billing_router, prefix=settings.API_V1_PREFIX)
 app.include_router(cart_router, prefix=settings.API_V1_PREFIX)
 app.include_router(catalogue_router, prefix=settings.API_V1_PREFIX)
 app.include_router(enquiry_router, prefix=settings.API_V1_PREFIX)

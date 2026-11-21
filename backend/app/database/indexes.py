@@ -5,7 +5,7 @@ Enforces uniqueness, relations, and query optimizations from docs/DATABASE_SCHEM
 
 import logging
 
-from pymongo import ASCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel
 from pymongo.asynchronous.database import AsyncDatabase
 
 logger = logging.getLogger("the_india_frames.database.indexes")
@@ -51,6 +51,47 @@ async def create_indexes(db: AsyncDatabase) -> None:
         IndexModel([("sku", ASCENDING)], unique=True),
         IndexModel([("product_id", ASCENDING), ("is_active", ASCENDING)]),
         IndexModel([("availability", ASCENDING)]),
+    ])
+
+    # 6. enquiries
+    await db.enquiries.create_indexes([
+        IndexModel([("enquiry_id", ASCENDING)], unique=True),
+        IndexModel([("customer_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("enquiry_status", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel(
+            [("idempotency_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+        ),
+    ])
+
+    # 7. offline_sales
+    await db.offline_sales.create_indexes([
+        IndexModel([("sale_id", ASCENDING)], unique=True),
+        IndexModel([("created_at", DESCENDING)]),
+        IndexModel([("payment_summary.payment_status", ASCENDING)]),
+    ])
+
+    # 8. payments (immutable ledger for both online enquiries and offline sales)
+    await db.payments.create_indexes([
+        IndexModel([("payment_id", ASCENDING)], unique=True),
+        IndexModel(
+            [("source_type", ASCENDING), ("source_id", ASCENDING), ("created_at", DESCENDING)]
+        ),
+        IndexModel([("paid_at", DESCENDING)]),
+        IndexModel(
+            [("idempotency_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+        ),
+    ])
+
+    # 9. audit_logs
+    await db.audit_logs.create_indexes([
+        IndexModel(
+            [("entity_type", ASCENDING), ("entity_id", ASCENDING), ("created_at", DESCENDING)]
+        ),
+        IndexModel([("created_at", DESCENDING)]),
     ])
 
     logger.info("Database indexes successfully verified and ensured.")

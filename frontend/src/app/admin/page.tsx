@@ -179,6 +179,12 @@ export default function AdminDashboardPage() {
             >
               Customers
             </Link>
+            <Link
+              href="/billing"
+              className="hover:text-white transition-colors"
+            >
+              Billing
+            </Link>
           </nav>
           <button
             onClick={handleLogout}

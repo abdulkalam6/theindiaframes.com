@@ -127,6 +127,12 @@ export default function AdminEnquiriesPage() {
             >
               Customers
             </Link>
+            <Link
+              href="/billing"
+              className="hover:text-white transition-colors"
+            >
+              Billing
+            </Link>
           </nav>
           <button
             onClick={handleLogout}

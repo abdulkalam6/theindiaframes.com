@@ -86,6 +86,9 @@ export default function AdminCustomersPage() {
             <Link href="/admin/customers" className="text-[#E3C27B] font-semibold">
               Customers
             </Link>
+            <Link href="/billing" className="hover:text-white transition-colors">
+              Billing
+            </Link>
           </nav>
           <button
             onClick={handleLogout}

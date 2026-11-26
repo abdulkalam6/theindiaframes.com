@@ -83,7 +83,7 @@ test.describe("The India Frames — Storefront, SEO & Security E2E", () => {
           new Set(
             els
               .map((el) => el.getAttribute("href"))
-              .filter((h): h is string => Boolean(h) && !h.startsWith("/#"))
+              .filter((h): h is string => typeof h === "string" && h.length > 0 && !h.startsWith("/#"))
           )
         )
       );
@@ -108,6 +108,84 @@ test.describe("The India Frames — Storefront, SEO & Security E2E", () => {
     await expect(secondFaq).toHaveAttribute("aria-expanded", "true");
 
     // Verify responsive layout (no horizontal overflow)
+    const hasOverflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth
+    );
+    expect(hasOverflow).toBe(false);
+  });
+
+  test("enhanced services page renders all sections, valid internal links, FAQ toggle, and zero overflow", async ({
+    page,
+    request,
+  }) => {
+    const response = await page.goto("/services");
+    expect(response?.status()).toBe(200);
+
+    await expect(
+      page.getByRole("heading", { name: /Framing, Lamination & Glass Services/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Custom Photo & Art Framing/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Commercial Lamination & Mounting/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Precision Glass Works/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Machinery Guidance & Consumables Supply/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Dedicated Digital Printing Services/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Meaningful Frames for Every Milestone/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /How We Work With You/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Services for Individuals & Businesses/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Have a Custom Requirement or Bulk Order\?/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Common Questions About Our Services/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Let's Create Something Worth Remembering\./i })
+    ).toBeVisible();
+
+    // Verify all internal hrefs on /services return HTTP 200
+    const hrefs = await page
+      .locator('main a[href^="/"]')
+      .evaluateAll((els) =>
+        Array.from(
+          new Set(
+            els
+              .map((el) => el.getAttribute("href"))
+              .filter((h): h is string => typeof h === "string" && h.length > 0 && !h.startsWith("/#"))
+          )
+        )
+      );
+    expect(hrefs.length).toBeGreaterThan(3);
+    for (const path of hrefs) {
+      const res = await request.get(path);
+      expect(res.status(), `Dead services link: ${path}`).toBe(200);
+    }
+
+    // Test FAQ accordion toggle
+    const faqButton = page.getByRole("button", {
+      name: /Do you provide lamination for documents and posters\?/i,
+    });
+    await faqButton.click();
+    await expect(faqButton).toHaveAttribute("aria-expanded", "true");
+
+    // Verify no horizontal overflow
     const hasOverflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth >
